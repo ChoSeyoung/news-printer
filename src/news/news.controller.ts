@@ -1,10 +1,17 @@
-import { Controller, Get, Query, HttpException, HttpStatus } from '@nestjs/common';
+import { Controller, Get, Post, Query, Body, HttpException, HttpStatus, Logger } from '@nestjs/common';
 import { NewsService } from './news.service';
 import { NewsItemDto } from './dto/news-item.dto';
+import { PublishAllDto, PublishAllResponseDto, PublishAllResultItem } from './dto/publish-all.dto';
+import { MediaPipelineService } from '../media/services/media-pipeline.service';
 
 @Controller('news')
 export class NewsController {
-  constructor(private readonly newsService: NewsService) {}
+  private readonly logger = new Logger(NewsController.name);
+
+  constructor(
+    private readonly newsService: NewsService,
+    private readonly mediaPipeline: MediaPipelineService,
+  ) {}
 
   @Get()
   async getNews(
@@ -57,6 +64,111 @@ export class NewsController {
 
       throw new HttpException(
         `Failed to fetch news: ${error.message}`,
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
+  /**
+   * Integrated endpoint: Fetch news, generate scripts, create videos, and upload to YouTube
+   * @param dto - Configuration for news fetching and publishing
+   * @returns Results of publishing all news items
+   */
+  @Post('publish-all')
+  async publishAll(@Body() dto: PublishAllDto): Promise<PublishAllResponseDto> {
+    try {
+      const category = dto.category || 'politics';
+      const limit = dto.limit || 10;
+      const privacyStatus = dto.privacyStatus || 'unlisted';
+
+      this.logger.log(`Publishing all news: category=${category}, limit=${limit}`);
+
+      // Step 1: Fetch news with full content and scripts
+      const newsItems = await this.newsService.fetchNews(category, limit, true);
+
+      if (!newsItems || newsItems.length === 0) {
+        return {
+          totalProcessed: 0,
+          successful: 0,
+          failed: 0,
+          results: [],
+        };
+      }
+
+      // Step 2: Filter items that have all required fields
+      const publishableItems = newsItems.filter(
+        (item) => item.fullContent && item.anchor && item.reporter,
+      );
+
+      this.logger.log(
+        `Found ${publishableItems.length} publishable items out of ${newsItems.length}`,
+      );
+
+      // Step 3: Process each item through media pipeline
+      const results: PublishAllResultItem[] = [];
+      let successful = 0;
+      let failed = 0;
+
+      for (const item of publishableItems) {
+        try {
+          this.logger.log(`Processing: ${item.title}`);
+
+          const result = await this.mediaPipeline.publishNews({
+            title: item.title,
+            anchorScript: item.anchor!,
+            reporterScript: item.reporter!,
+            privacyStatus,
+          });
+
+          if (result.success) {
+            successful++;
+            results.push({
+              title: item.title,
+              success: true,
+              videoId: result.videoId,
+              videoUrl: result.videoUrl,
+            });
+            this.logger.log(`✅ Success: ${item.title} - ${result.videoUrl}`);
+          } else {
+            failed++;
+            results.push({
+              title: item.title,
+              success: false,
+              error: result.error,
+            });
+            this.logger.warn(`❌ Failed: ${item.title} - ${result.error}`);
+          }
+        } catch (error) {
+          failed++;
+          const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+          results.push({
+            title: item.title,
+            success: false,
+            error: errorMessage,
+          });
+          this.logger.error(`❌ Error processing ${item.title}:`, error);
+        }
+      }
+
+      this.logger.log(
+        `Completed: ${successful} successful, ${failed} failed out of ${publishableItems.length}`,
+      );
+
+      return {
+        totalProcessed: publishableItems.length,
+        successful,
+        failed,
+        results,
+      };
+    } catch (error) {
+      this.logger.error('Failed to publish news:', error);
+
+      if (error instanceof HttpException) {
+        throw error;
+      }
+
+      throw new HttpException(
+        `Failed to publish news: ${error instanceof Error ? error.message : 'Unknown error'}`,
         HttpStatus.INTERNAL_SERVER_ERROR,
       );
     }
