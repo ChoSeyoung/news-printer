@@ -4,6 +4,7 @@ import { parseStringPromise } from 'xml2js';
 import { NewsItemDto } from './dto/news-item.dto';
 import { RssFeed, RssItem } from './interfaces/rss-feed.interface';
 import { ArticleScraperService } from './services/article-scraper.service';
+import { GeminiService } from './services/gemini.service';
 
 @Injectable()
 export class NewsService {
@@ -11,7 +12,10 @@ export class NewsService {
   private readonly baseUrl = 'https://www.chosun.com/arc/outboundfeeds/rss/category';
   private readonly timeout = 10000;
 
-  constructor(private readonly articleScraper: ArticleScraperService) {}
+  constructor(
+    private readonly articleScraper: ArticleScraperService,
+    private readonly geminiService: GeminiService,
+  ) {}
 
   async fetchNews(
     category: string = 'politics',
@@ -41,9 +45,21 @@ export class NewsService {
           limitedItems.map((item) => item.link),
         );
 
-        limitedItems.forEach((item, index) => {
-          item.fullContent = contents[index];
-        });
+        // Generate AI scripts for articles with content
+        for (let i = 0; i < limitedItems.length; i++) {
+          const item = limitedItems[i];
+          const content = contents[i];
+
+          item.fullContent = content;
+
+          // Generate anchor and reporter scripts if content exists
+          if (content && content.length > 0) {
+            this.logger.debug(`Generating scripts for article: ${item.title}`);
+            const scripts = await this.geminiService.generateScripts(content);
+            item.anchor = scripts.anchor;
+            item.reporter = scripts.reporter;
+          }
+        }
       }
 
       return limitedItems;
