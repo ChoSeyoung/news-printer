@@ -20,6 +20,7 @@
     "test:e2e": "jest --config ./test/jest-e2e.json"
   },
   "dependencies": {
+    "@google-cloud/text-to-speech": "^6.4.0",
     "@google/generative-ai": "^0.24.1",
     "@nestjs/common": "^11.0.1",
     "@nestjs/config": "^4.0.2",
@@ -27,6 +28,9 @@
     "@nestjs/platform-express": "^11.0.1",
     "axios": "^1.13.2",
     "cheerio": "^1.1.2",
+    "fluent-ffmpeg": "^2.1.3",
+    "fs-extra": "^11.3.2",
+    "googleapis": "^166.0.0",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1",
     "xml2js": "^0.6.2"
@@ -38,6 +42,7 @@
     "@nestjs/schematics": "^11.0.0",
     "@nestjs/testing": "^11.0.1",
     "@types/express": "^5.0.0",
+    "@types/fluent-ffmpeg": "^2.1.28",
     "@types/jest": "^30.0.0",
     "@types/node": "^22.10.7",
     "@types/supertest": "^6.0.2",
