@@ -3,6 +3,7 @@ import axios, { AxiosError } from 'axios';
 import { parseStringPromise } from 'xml2js';
 import { NewsItemDto } from './dto/news-item.dto';
 import { RssFeed, RssItem } from './interfaces/rss-feed.interface';
+import { ArticleScraperService } from './services/article-scraper.service';
 
 @Injectable()
 export class NewsService {
@@ -10,7 +11,13 @@ export class NewsService {
   private readonly baseUrl = 'https://www.chosun.com/arc/outboundfeeds/rss/category';
   private readonly timeout = 10000;
 
-  async fetchNews(category: string = 'politics', limit: number = 10): Promise<NewsItemDto[]> {
+  constructor(private readonly articleScraper: ArticleScraperService) {}
+
+  async fetchNews(
+    category: string = 'politics',
+    limit: number = 10,
+    includeFullContent: boolean = false,
+  ): Promise<NewsItemDto[]> {
     const rssUrl = `${this.baseUrl}/${category}/?outputType=xml`;
 
     this.logger.log(`Fetching RSS feed from: ${rssUrl}`);
@@ -25,8 +32,21 @@ export class NewsService {
 
       const parsedData = await this.parseXmlToJson(response.data);
       const newsItems = this.extractNewsItems(parsedData, category);
+      const limitedItems = newsItems.slice(0, limit);
 
-      return newsItems.slice(0, limit);
+      // Fetch full content if requested
+      if (includeFullContent) {
+        this.logger.log(`Fetching full content for ${limitedItems.length} articles`);
+        const contents = await this.articleScraper.fetchMultipleArticles(
+          limitedItems.map((item) => item.link),
+        );
+
+        limitedItems.forEach((item, index) => {
+          item.fullContent = contents[index];
+        });
+      }
+
+      return limitedItems;
     } catch (error) {
       this.handleError(error, rssUrl);
     }

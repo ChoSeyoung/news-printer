@@ -10,6 +10,7 @@ export class NewsController {
   async getNews(
     @Query('limit') limit?: string,
     @Query('category') category?: string,
+    @Query('fullContent') fullContent?: string,
   ): Promise<{
     success: boolean;
     data: NewsItemDto[];
@@ -18,10 +19,12 @@ export class NewsController {
       source: string;
       fetchedAt: string;
       category?: string;
+      includesFullContent: boolean;
     };
   }> {
     try {
       const limitNumber = limit ? parseInt(limit, 10) : 10;
+      const includeFullContent = fullContent === 'true';
 
       if (isNaN(limitNumber) || limitNumber < 1 || limitNumber > 100) {
         throw new HttpException(
@@ -33,6 +36,7 @@ export class NewsController {
       const newsItems = await this.newsService.fetchNews(
         category || 'politics',
         limitNumber,
+        includeFullContent,
       );
 
       return {
@@ -42,6 +46,7 @@ export class NewsController {
           total: newsItems.length,
           source: 'chosun.com',
           fetchedAt: new Date().toISOString(),
+          includesFullContent: includeFullContent,
           ...(category && { category }),
         },
       };

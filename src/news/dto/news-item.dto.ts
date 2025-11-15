@@ -5,4 +5,5 @@ export class NewsItemDto {
   pubDate: string;
   category: string;
   guid: string;
+  fullContent?: string; // Full article content from web scraping
 }
