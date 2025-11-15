@@ -64,9 +64,12 @@ export class NewsService {
         return [];
       }
 
+      const todayKST = this.getTodayKST();
+
       return items
         .filter((item) => item && item.title && item.link)
-        .map((item: RssItem) => this.mapToNewsItemDto(item, category));
+        .map((item: RssItem) => this.mapToNewsItemDto(item, category))
+        .filter((newsItem) => this.isTodayKST(newsItem.pubDate, todayKST));
     } catch (error) {
       this.logger.error('Failed to extract news items', error);
       throw new HttpException(
@@ -77,14 +80,78 @@ export class NewsService {
   }
 
   private mapToNewsItemDto(item: RssItem, category: string): NewsItemDto {
+    const pubDateKST = this.convertUTCtoKST(item.pubDate);
+
     return {
       title: this.cleanText(item.title),
       link: item.link,
       description: item.description ? this.cleanText(item.description) : '',
-      pubDate: item.pubDate || new Date().toISOString(),
+      pubDate: pubDateKST,
       category: category,
       guid: item.guid || item.link,
     };
+  }
+
+  /**
+   * Convert UTC date string to KST (UTC+9)
+   * @param utcDateString - UTC date string from RSS feed
+   * @returns ISO string in KST timezone
+   */
+  private convertUTCtoKST(utcDateString?: string): string {
+    try {
+      const date = utcDateString ? new Date(utcDateString) : new Date();
+
+      // Convert to KST (UTC+9)
+      const kstOffset = 9 * 60; // 9 hours in minutes
+      const utcTime = date.getTime();
+      const kstTime = new Date(utcTime + kstOffset * 60 * 1000);
+
+      return kstTime.toISOString();
+    } catch (error) {
+      this.logger.warn(`Failed to parse date: ${utcDateString}, using current time`);
+      const now = new Date();
+      const kstOffset = 9 * 60;
+      const kstTime = new Date(now.getTime() + kstOffset * 60 * 1000);
+      return kstTime.toISOString();
+    }
+  }
+
+  /**
+   * Get today's date in KST timezone (start of day)
+   * @returns Date object representing start of today in KST
+   */
+  private getTodayKST(): Date {
+    const now = new Date();
+    const kstOffset = 9 * 60; // 9 hours in minutes
+    const kstNow = new Date(now.getTime() + kstOffset * 60 * 1000);
+
+    // Get start of day in KST
+    const year = kstNow.getUTCFullYear();
+    const month = kstNow.getUTCMonth();
+    const day = kstNow.getUTCDate();
+
+    return new Date(Date.UTC(year, month, day, -9, 0, 0, 0)); // -9 to adjust back to UTC
+  }
+
+  /**
+   * Check if the given date is today in KST timezone
+   * @param dateString - ISO date string
+   * @param todayKST - Start of today in KST
+   * @returns true if the date is today in KST
+   */
+  private isTodayKST(dateString: string, todayKST: Date): boolean {
+    try {
+      const date = new Date(dateString);
+      const kstOffset = 9 * 60;
+      const dateKST = new Date(date.getTime());
+
+      const tomorrowKST = new Date(todayKST.getTime() + 24 * 60 * 60 * 1000);
+
+      return dateKST >= todayKST && dateKST < tomorrowKST;
+    } catch (error) {
+      this.logger.warn(`Failed to check date: ${dateString}`);
+      return false;
+    }
   }
 
   private cleanText(text: string): string {
