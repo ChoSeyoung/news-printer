@@ -21,6 +21,22 @@ export interface PublishNewsResult {
   error?: string;
 }
 
+export interface PreviewNewsOptions {
+  title: string;
+  newsContent: string;
+  anchorScript: string;
+  reporterScript: string;
+}
+
+export interface PreviewNewsResult {
+  optimizedTitle: string;
+  optimizedDescription: string;
+  tags: string[];
+  categoryId: string;
+  categoryName: string;
+  estimatedDurationSeconds: number;
+}
+
 @Injectable()
 export class MediaPipelineService {
   private readonly logger = new Logger(MediaPipelineService.name);
@@ -140,6 +156,53 @@ export class MediaPipelineService {
         success: false,
         error: error.message,
       };
+    }
+  }
+
+  /**
+   * Preview news video metadata without creating actual files
+   * Generates SEO metadata and estimates video duration
+   *
+   * @param options - Preview options
+   * @returns Preview result with metadata and duration estimate
+   */
+  async previewNews(options: PreviewNewsOptions): Promise<PreviewNewsResult> {
+    try {
+      this.logger.log(`Generating preview for: ${options.title}`);
+
+      // Generate SEO-optimized metadata
+      const seoMetadata = await this.seoOptimizerService.generateSeoMetadata({
+        originalTitle: options.title,
+        newsContent: options.newsContent,
+        anchorScript: options.anchorScript,
+        reporterScript: options.reporterScript,
+      });
+
+      // Category mapping
+      const categoryMap: Record<string, string> = {
+        '25': '정치',
+        '28': '과학기술',
+        '24': '문화',
+        '17': '스포츠',
+      };
+      const categoryName = categoryMap[seoMetadata.categoryId] || '사회';
+
+      // Estimate duration based on text length
+      // Average Korean TTS: ~4 characters per second
+      const totalCharacters = options.anchorScript.length + options.reporterScript.length;
+      const estimatedDurationSeconds = Math.ceil(totalCharacters / 4);
+
+      return {
+        optimizedTitle: seoMetadata.optimizedTitle,
+        optimizedDescription: seoMetadata.optimizedDescription,
+        tags: seoMetadata.tags,
+        categoryId: seoMetadata.categoryId,
+        categoryName,
+        estimatedDurationSeconds,
+      };
+    } catch (error) {
+      this.logger.error('Preview generation error:', error.message);
+      throw error;
     }
   }
 

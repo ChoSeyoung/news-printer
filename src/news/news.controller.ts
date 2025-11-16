@@ -2,6 +2,7 @@ import { Controller, Get, Post, Query, Body, HttpException, HttpStatus, Logger }
 import { NewsService } from './news.service';
 import { NewsItemDto } from './dto/news-item.dto';
 import { PublishAllDto, PublishAllResponseDto, PublishAllResultItem } from './dto/publish-all.dto';
+import { NewsPreviewDto, NewsPreviewResponseDto, NewsPreviewItem } from './dto/news-preview.dto';
 import { MediaPipelineService } from '../media/services/media-pipeline.service';
 
 @Controller('news')
@@ -170,6 +171,100 @@ export class NewsController {
 
       throw new HttpException(
         `Failed to publish news: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
+  /**
+   * Preview news videos before publishing
+   * @param dto - Preview configuration
+   * @returns Preview data including video metadata
+   */
+  @Get('preview')
+  async previewNews(
+    @Query('limit') limit?: string,
+    @Query('category') category?: string,
+  ): Promise<NewsPreviewResponseDto> {
+    try {
+      const limitNumber = limit ? parseInt(limit, 10) : 10;
+      const categoryName = category || 'politics';
+
+      if (isNaN(limitNumber) || limitNumber < 1 || limitNumber > 100) {
+        throw new HttpException(
+          'Limit must be between 1 and 100',
+          HttpStatus.BAD_REQUEST,
+        );
+      }
+
+      this.logger.log(`Generating preview: category=${categoryName}, limit=${limitNumber}`);
+
+      // Fetch news with full content and scripts
+      const newsItems = await this.newsService.fetchNews(categoryName, limitNumber, true);
+
+      if (!newsItems || newsItems.length === 0) {
+        return {
+          total: 0,
+          items: [],
+          meta: {
+            category: categoryName,
+            fetchedAt: new Date().toISOString(),
+          },
+        };
+      }
+
+      // Filter items that have all required fields
+      const previewableItems = newsItems.filter(
+        (item) => item.fullContent && item.anchor && item.reporter,
+      );
+
+      this.logger.log(`Generating preview for ${previewableItems.length} items`);
+
+      // Generate preview for each item
+      const previewItems: NewsPreviewItem[] = [];
+
+      for (const item of previewableItems) {
+        try {
+          const preview = await this.mediaPipeline.previewNews({
+            title: item.title,
+            newsContent: item.fullContent || item.description || item.title,
+            anchorScript: item.anchor!,
+            reporterScript: item.reporter!,
+          });
+
+          previewItems.push({
+            title: preview.optimizedTitle,
+            originalTitle: item.title,
+            description: preview.optimizedDescription,
+            tags: preview.tags,
+            categoryId: preview.categoryId,
+            categoryName: preview.categoryName,
+            estimatedDurationSeconds: preview.estimatedDurationSeconds,
+            anchorScript: item.anchor!,
+            reporterScript: item.reporter!,
+          });
+        } catch (error) {
+          this.logger.error(`Preview error for ${item.title}:`, error);
+        }
+      }
+
+      return {
+        total: previewItems.length,
+        items: previewItems,
+        meta: {
+          category: categoryName,
+          fetchedAt: new Date().toISOString(),
+        },
+      };
+    } catch (error) {
+      this.logger.error('Failed to generate preview:', error);
+
+      if (error instanceof HttpException) {
+        throw error;
+      }
+
+      throw new HttpException(
+        `Failed to generate preview: ${error instanceof Error ? error.message : 'Unknown error'}`,
         HttpStatus.INTERNAL_SERVER_ERROR,
       );
     }
