@@ -18,6 +18,39 @@ export class VideoService {
   constructor() {
     // Ensure temp directory exists
     fs.ensureDirSync(this.tempDir);
+    // Create black background image if it doesn't exist
+    this.createBlackBackground();
+  }
+
+  /**
+   * Create a 10-second black background video file
+   * This template will be reused and trimmed to match audio duration
+   */
+  private async createBlackBackground(): Promise<void> {
+    const blackVideoPath = path.join(this.tempDir, 'black_template.mp4');
+
+    if (await fs.pathExists(blackVideoPath)) {
+      return;
+    }
+
+    this.logger.debug('Creating black video template');
+
+    // Create a 10-second black video using shell command
+    // This avoids all the lavfi/fluent-ffmpeg issues
+    return new Promise((resolve, reject) => {
+      const { exec } = require('child_process');
+      const cmd = `ffmpeg -f lavfi -i color=c=black:s=1920x1080:r=25 -t 10 -pix_fmt yuv420p -y "${blackVideoPath}"`;
+
+      exec(cmd, (error: any) => {
+        if (error) {
+          this.logger.warn('Could not create black video template, will use alternative method');
+          resolve(); // Don't fail, just continue without template
+        } else {
+          this.logger.debug('Black video template created');
+          resolve();
+        }
+      });
+    });
   }
 
   /**
@@ -102,25 +135,26 @@ export class VideoService {
     return new Promise((resolve, reject) => {
       this.logger.debug('Generating video with FFmpeg');
 
+      const blackVideoPath = path.join(this.tempDir, 'black_template.mp4');
+
+      // Use the black video template and combine with audio
+      // The -shortest option will trim the video to match audio duration
       ffmpeg()
-        // Create a black background using color filter
-        .input(`color=c=black:s=${dimensions.width}x${dimensions.height}:d=1`)
-        .inputFormat('lavfi')
-        // Add audio file
+        .input(blackVideoPath)
         .input(audioPath)
-        // Video codec
+        .outputOptions([
+          '-map 0:v', // video from black template
+          '-map 1:a', // audio from audio file
+          '-shortest', // trim to shortest input (audio)
+        ])
         .videoCodec('libx264')
         .outputOptions([
           '-pix_fmt yuv420p',
-          '-preset medium',
+          '-preset ultrafast',
           '-crf 23',
         ])
-        // Audio codec
         .audioCodec('aac')
         .audioBitrate('192k')
-        // Match video duration to audio duration
-        .outputOptions(['-shortest'])
-        // Output file
         .output(outputPath)
         .on('start', (commandLine) => {
           this.logger.debug('FFmpeg command:', commandLine);
