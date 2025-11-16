@@ -71,7 +71,7 @@ export class MediaPipelineService {
     let reporterAudioPath: string | null = null;
     let videoPath: string | null = null;
     let thumbnailPath: string | null = null;
-    let backgroundImagePath: string | null = null;
+    let backgroundImagePaths: string[] = [];
 
     try {
       this.logger.log(`Starting media pipeline for: ${options.title}`);
@@ -101,8 +101,8 @@ export class MediaPipelineService {
       anchorAudioPath = anchorPath;
       reporterAudioPath = reporterPath;
 
-      // Step 2: Extract keywords and search for background image
-      this.logger.log('Step 2/6: Searching for background image');
+      // Step 2: Extract keywords and search for background images
+      this.logger.log('Step 2/6: Searching for background images');
       try {
         const keywords = await this.keywordExtractionService.extractKeywords(
           options.title,
@@ -110,18 +110,18 @@ export class MediaPipelineService {
         );
         this.logger.debug(`Extracted keywords: ${keywords}`);
 
-        backgroundImagePath = await this.imageSearchService.searchAndDownloadImage(keywords);
-        this.logger.log(`Background image downloaded: ${backgroundImagePath}`);
+        backgroundImagePaths = await this.imageSearchService.searchAndDownloadImages(keywords, 4);
+        this.logger.log(`Downloaded ${backgroundImagePaths.length} background images`);
       } catch (error) {
-        this.logger.warn('Failed to get background image, using default:', error.message);
-        backgroundImagePath = null;
+        this.logger.warn('Failed to get background images, using default:', error.message);
+        backgroundImagePaths = [];
       }
 
-      // Step 3: Create video from audio with background image
+      // Step 3: Create video from audio with background images
       this.logger.log('Step 3/6: Creating video');
       videoPath = await this.videoService.createVideo({
         audioFiles: [anchorPath, reporterPath],
-        backgroundImagePath: backgroundImagePath || undefined,
+        backgroundImagePaths: backgroundImagePaths.length > 0 ? backgroundImagePaths : undefined,
       });
 
       // Step 4: Generate SEO-optimized metadata
@@ -169,8 +169,8 @@ export class MediaPipelineService {
         thumbnailPath,
       });
 
-      // Clean up temporary files (including background image)
-      await this.cleanup(anchorAudioPath, reporterAudioPath, videoPath, thumbnailPath, backgroundImagePath);
+      // Clean up temporary files (including background images)
+      await this.cleanup(anchorAudioPath, reporterAudioPath, videoPath, thumbnailPath, ...backgroundImagePaths);
 
       if (uploadResult.success) {
         // Mark news as published to prevent duplicates
@@ -201,7 +201,7 @@ export class MediaPipelineService {
       this.logger.error('Media pipeline error:', error.message);
 
       // Attempt cleanup on error
-      await this.cleanup(anchorAudioPath, reporterAudioPath, videoPath, thumbnailPath, backgroundImagePath);
+      await this.cleanup(anchorAudioPath, reporterAudioPath, videoPath, thumbnailPath, ...backgroundImagePaths);
 
       return {
         success: false,

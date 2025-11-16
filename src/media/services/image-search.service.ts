@@ -68,23 +68,82 @@ export class ImageSearchService {
   }
 
   /**
+   * Search for multiple images using keywords with automatic fallback
+   * @param keywords - Search keywords (comma-separated)
+   * @param count - Number of images to download (default: 4)
+   * @returns Array of paths to downloaded images
+   */
+  async searchAndDownloadImages(keywords: string, count: number = 4): Promise<string[]> {
+    try {
+      this.logger.log(`Searching for ${count} images with keywords: ${keywords}`);
+
+      // Try Pexels first
+      let imageResults = await this.searchPexelsMultiple(keywords, count);
+
+      // Fallback to Unsplash if Pexels fails
+      if (!imageResults || imageResults.length === 0) {
+        this.logger.warn('Pexels search failed, trying Unsplash');
+        imageResults = await this.searchUnsplashMultiple(keywords, count);
+      }
+
+      // Final fallback: search with generic "news" keyword
+      if (!imageResults || imageResults.length === 0) {
+        this.logger.warn('No results found, trying generic "news" keyword');
+        imageResults = await this.searchPexelsMultiple('news', count);
+
+        if (!imageResults || imageResults.length === 0) {
+          imageResults = await this.searchUnsplashMultiple('news', count);
+        }
+      }
+
+      if (!imageResults || imageResults.length === 0) {
+        throw new Error('Failed to find any suitable images');
+      }
+
+      // Download all images
+      const imagePaths: string[] = [];
+      for (let i = 0; i < imageResults.length; i++) {
+        const imagePath = await this.downloadImage(imageResults[i].url, i);
+        imagePaths.push(imagePath);
+      }
+
+      this.logger.log(`Downloaded ${imagePaths.length} images from ${imageResults[0].source}`);
+      return imagePaths;
+    } catch (error) {
+      this.logger.error('Failed to search and download images:', error.message);
+      throw error;
+    }
+  }
+
+  /**
    * Search for images on Pexels
    * @param keywords - Search keywords
    * @returns Image URL or null if failed
    */
   private async searchPexels(keywords: string): Promise<ImageSearchResult | null> {
+    const results = await this.searchPexelsMultiple(keywords, 1);
+    return results && results.length > 0 ? results[0] : null;
+  }
+
+  /**
+   * Search for multiple images on Pexels
+   * @param keywords - Search keywords
+   * @param count - Number of images to retrieve
+   * @returns Array of image results or null if failed
+   */
+  private async searchPexelsMultiple(keywords: string, count: number): Promise<ImageSearchResult[] | null> {
     if (!this.pexelsApiKey) {
       this.logger.warn('Pexels API key not configured');
       return null;
     }
 
     try {
-      this.logger.debug(`Searching Pexels for: ${keywords}`);
+      this.logger.debug(`Searching Pexels for ${count} images: ${keywords}`);
 
       const response = await axios.get('https://api.pexels.com/v1/search', {
         params: {
           query: keywords,
-          per_page: 1,
+          per_page: count,
           orientation: 'landscape',
         },
         headers: {
@@ -94,14 +153,14 @@ export class ImageSearchService {
       });
 
       if (response.data.photos && response.data.photos.length > 0) {
-        const photo = response.data.photos[0];
-        this.logger.debug(`Found image on Pexels: ${photo.photographer}`);
-
-        return {
+        const results: ImageSearchResult[] = response.data.photos.map((photo: any) => ({
           url: photo.src.large2x || photo.src.large || photo.src.original,
           photographer: photo.photographer,
-          source: 'pexels',
-        };
+          source: 'pexels' as const,
+        }));
+
+        this.logger.debug(`Found ${results.length} images on Pexels`);
+        return results;
       }
 
       this.logger.warn('No images found on Pexels');
@@ -122,18 +181,29 @@ export class ImageSearchService {
    * @returns Image URL or null if failed
    */
   private async searchUnsplash(keywords: string): Promise<ImageSearchResult | null> {
+    const results = await this.searchUnsplashMultiple(keywords, 1);
+    return results && results.length > 0 ? results[0] : null;
+  }
+
+  /**
+   * Search for multiple images on Unsplash
+   * @param keywords - Search keywords
+   * @param count - Number of images to retrieve
+   * @returns Array of image results or null if failed
+   */
+  private async searchUnsplashMultiple(keywords: string, count: number): Promise<ImageSearchResult[] | null> {
     if (!this.unsplashAccessKey) {
       this.logger.warn('Unsplash access key not configured');
       return null;
     }
 
     try {
-      this.logger.debug(`Searching Unsplash for: ${keywords}`);
+      this.logger.debug(`Searching Unsplash for ${count} images: ${keywords}`);
 
       const response = await axios.get('https://api.unsplash.com/search/photos', {
         params: {
           query: keywords,
-          per_page: 1,
+          per_page: count,
           orientation: 'landscape',
         },
         headers: {
@@ -143,14 +213,14 @@ export class ImageSearchService {
       });
 
       if (response.data.results && response.data.results.length > 0) {
-        const photo = response.data.results[0];
-        this.logger.debug(`Found image on Unsplash: ${photo.user.name}`);
-
-        return {
+        const results: ImageSearchResult[] = response.data.results.map((photo: any) => ({
           url: photo.urls.regular || photo.urls.full,
           photographer: photo.user.name,
-          source: 'unsplash',
-        };
+          source: 'unsplash' as const,
+        }));
+
+        this.logger.debug(`Found ${results.length} images on Unsplash`);
+        return results;
       }
 
       this.logger.warn('No images found on Unsplash');
@@ -168,16 +238,18 @@ export class ImageSearchService {
   /**
    * Download image from URL
    * @param imageUrl - URL of the image to download
+   * @param index - Optional index for multiple images (for unique filenames)
    * @returns Path to downloaded image
    */
-  private async downloadImage(imageUrl: string): Promise<string> {
+  private async downloadImage(imageUrl: string, index?: number): Promise<string> {
     try {
       const response = await axios.get(imageUrl, {
         responseType: 'arraybuffer',
         timeout: 30000,
       });
 
-      const filename = `bg_${Date.now()}_${Math.random().toString(36).substr(2, 9)}.jpg`;
+      const indexSuffix = index !== undefined ? `_${index}` : '';
+      const filename = `bg_${Date.now()}${indexSuffix}_${Math.random().toString(36).substr(2, 9)}.jpg`;
       const filepath = path.join(this.tempDir, filename);
 
       await fs.writeFile(filepath, response.data);

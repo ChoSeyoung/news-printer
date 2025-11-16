@@ -12,7 +12,7 @@ export interface VideoOptions {
   outputPath?: string;
   width?: number;
   height?: number;
-  backgroundImagePath?: string;
+  backgroundImagePaths?: string[];
 }
 
 @Injectable()
@@ -100,7 +100,7 @@ export class VideoService {
       await this.generateVideo(combinedAudioPath, outputPath, {
         width: options.width || 1920,
         height: options.height || 1080,
-        backgroundImagePath: options.backgroundImagePath,
+        backgroundImagePaths: options.backgroundImagePaths,
       });
 
       // Clean up combined audio file
@@ -115,15 +115,15 @@ export class VideoService {
   }
 
   /**
-   * Generate video with static background and audio
+   * Generate video with background images and audio
    * @param audioPath - Path to audio file
    * @param outputPath - Path for output video
-   * @param dimensions - Video dimensions and optional background image
+   * @param dimensions - Video dimensions and optional background images
    */
   private async generateVideo(
     audioPath: string,
     outputPath: string,
-    dimensions: { width: number; height: number; backgroundImagePath?: string },
+    dimensions: { width: number; height: number; backgroundImagePaths?: string[] },
   ): Promise<void> {
     try {
       this.logger.debug('Generating video with FFmpeg');
@@ -132,21 +132,39 @@ export class VideoService {
       const audioDuration = await this.getAudioDuration(audioPath);
       const tempVideoPath = path.join(this.tempDir, `temp_video_${Date.now()}.mp4`);
 
-      if (dimensions.backgroundImagePath && await fs.pathExists(dimensions.backgroundImagePath)) {
-        // Use background image
-        this.logger.debug(`Creating video with background image: ${dimensions.backgroundImagePath}`);
+      // Check if we have valid background images
+      const validImages = dimensions.backgroundImagePaths?.filter(
+        async (imgPath) => await fs.pathExists(imgPath)
+      ) || [];
+
+      if (validImages.length > 0) {
+        // Use multiple background images
+        this.logger.debug(`Creating video with ${validImages.length} background images`);
         this.logger.debug(`Video duration: ${audioDuration} seconds`);
 
-        // Step 1: Create video from background image with exact audio duration
-        const createImageVideoCmd = `ffmpeg -loop 1 -i "${dimensions.backgroundImagePath}" -t ${audioDuration} -vf "scale=${dimensions.width}:${dimensions.height}:force_original_aspect_ratio=increase,crop=${dimensions.width}:${dimensions.height}" -r 25 -pix_fmt yuv420p -y "${tempVideoPath}"`;
-        this.logger.debug(`Creating image-based video: ${createImageVideoCmd}`);
+        // Calculate duration per image
+        const durationPerImage = audioDuration / validImages.length;
+        this.logger.debug(`Duration per image: ${durationPerImage} seconds`);
 
-        try {
-          await execAsync(createImageVideoCmd);
-          this.logger.debug('Image-based video created successfully');
-        } catch (error) {
-          this.logger.error('Failed to create image-based video:', error.message);
-          throw error;
+        // Create video segments for each image
+        const segmentPaths: string[] = [];
+        for (let i = 0; i < validImages.length; i++) {
+          const segmentPath = await this.createImageSegment(
+            validImages[i],
+            durationPerImage,
+            i,
+            dimensions.width,
+            dimensions.height,
+          );
+          segmentPaths.push(segmentPath);
+        }
+
+        // Concatenate all segments
+        await this.concatenateSegments(segmentPaths, tempVideoPath);
+
+        // Clean up segment files
+        for (const segmentPath of segmentPaths) {
+          await fs.remove(segmentPath).catch(() => {});
         }
       } else {
         // Fallback to black background
@@ -164,7 +182,7 @@ export class VideoService {
         }
       }
 
-      // Step 2: Combine video with audio using raw FFmpeg command
+      // Combine video with audio using raw FFmpeg command
       const combineCmd = `ffmpeg -i "${tempVideoPath}" -i "${audioPath}" -map 0:v -map 1:a -c:v copy -c:a aac -b:a 192k -y "${outputPath}"`;
       this.logger.debug(`Combining video and audio: ${combineCmd}`);
 
@@ -181,6 +199,65 @@ export class VideoService {
     } catch (error) {
       this.logger.error('Failed to generate video:', error.message);
       throw error;
+    }
+  }
+
+  /**
+   * Create a video segment from a single background image
+   * @param imagePath - Path to background image
+   * @param duration - Duration of this segment in seconds
+   * @param index - Index of this segment
+   * @param width - Video width
+   * @param height - Video height
+   * @returns Path to segment video file
+   */
+  private async createImageSegment(
+    imagePath: string,
+    duration: number,
+    index: number,
+    width: number,
+    height: number,
+  ): Promise<string> {
+    const segmentPath = path.join(this.tempDir, `segment_${Date.now()}_${index}.mp4`);
+
+    const createSegmentCmd = `ffmpeg -loop 1 -i "${imagePath}" -t ${duration} -vf "scale=${width}:${height}:force_original_aspect_ratio=increase,crop=${width}:${height}" -r 25 -pix_fmt yuv420p -y "${segmentPath}"`;
+    this.logger.debug(`Creating segment ${index}: ${createSegmentCmd}`);
+
+    try {
+      await execAsync(createSegmentCmd);
+      this.logger.debug(`Segment ${index} created successfully: ${segmentPath}`);
+      return segmentPath;
+    } catch (error) {
+      this.logger.error(`Failed to create segment ${index}:`, error.message);
+      throw error;
+    }
+  }
+
+  /**
+   * Concatenate multiple video segments into one
+   * @param segmentPaths - Array of paths to segment videos
+   * @param outputPath - Path for concatenated output
+   */
+  private async concatenateSegments(segmentPaths: string[], outputPath: string): Promise<void> {
+    // Create a file list for FFmpeg concat
+    const fileListPath = path.join(this.tempDir, `filelist_${Date.now()}.txt`);
+    const fileListContent = segmentPaths.map(p => `file '${path.resolve(p)}'`).join('\n');
+
+    await fs.writeFile(fileListPath, fileListContent);
+    this.logger.debug(`Created file list: ${fileListPath}`);
+
+    const concatCmd = `ffmpeg -f concat -safe 0 -i "${fileListPath}" -c copy -y "${outputPath}"`;
+    this.logger.debug(`Concatenating segments: ${concatCmd}`);
+
+    try {
+      await execAsync(concatCmd);
+      this.logger.debug('Segments concatenated successfully');
+    } catch (error) {
+      this.logger.error('Failed to concatenate segments:', error.message);
+      throw error;
+    } finally {
+      // Clean up file list
+      await fs.remove(fileListPath).catch(() => {});
     }
   }
 
