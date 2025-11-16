@@ -53,8 +53,8 @@ jobs:
 
       - name: Setup YouTube tokens
         run: |
-          mkdir -p .tokens
-          echo '${{ secrets.YOUTUBE_TOKENS }}' > .tokens/youtube-tokens.json
+          mkdir -p credentials
+          echo '${{ secrets.YOUTUBE_TOKENS }}' > credentials/youtube-tokens.json
 
       - name: Create .env file
         run: |
@@ -67,7 +67,7 @@ jobs:
           GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }}
           GOOGLE_APPLICATION_CREDENTIALS=google-credentials.json
           YOUTUBE_CLIENT_SECRET_PATH=client_secret.json
-          YOUTUBE_TOKENS_PATH=.tokens/youtube-tokens.json
+          YOUTUBE_TOKENS_PATH=credentials/youtube-tokens.json
           EOF
 
       - name: Build application
@@ -153,7 +153,7 @@ jobs:
         run: |
           rm -f google-credentials.json
           rm -f client_secret.json
-          rm -rf .tokens
+          rm -rf credentials
           rm -f .env
 
       - name: Notify on failure

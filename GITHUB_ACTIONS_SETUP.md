@@ -54,7 +54,7 @@ GitHub 저장소의 Settings → Secrets and variables → Actions로 이동하�
 - **설명**: YouTube 인증 토큰 (OAuth 인증 후 생성)
 - **발급 방법**:
   1. 로컬에서 한 번 YouTube 인증 완료
-  2. `.tokens/youtube-tokens.json` 파일 내용 복사
+  2. `credentials/youtube-tokens.json` 파일 내용 복사
   3. 아직 인증하지 않았다면:
      ```bash
      # 로컬 서버 실행
@@ -64,9 +64,9 @@ GitHub 저장소의 Settings → Secrets and variables → Actions로 이동하�
      http://localhost:3000/auth/youtube/authorize
 
      # 인증 완료 후 토큰 파일 확인
-     cat .tokens/youtube-tokens.json
+     cat credentials/youtube-tokens.json
      ```
-- **값**: `.tokens/youtube-tokens.json` 파일 전체 내용
+- **값**: `credentials/youtube-tokens.json` 파일 전체 내용
   ```json
   {
     "access_token": "...",
