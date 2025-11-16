@@ -2,6 +2,11 @@ import { Injectable, Logger } from '@nestjs/common';
 import axios from 'axios';
 import * as cheerio from 'cheerio';
 
+export interface ArticleData {
+  content: string;
+  imageUrls: string[];
+}
+
 @Injectable()
 export class ArticleScraperService {
   private readonly logger = new Logger(ArticleScraperService.name);
@@ -9,37 +14,37 @@ export class ArticleScraperService {
   private readonly maxConcurrent = 5;
 
   /**
-   * Fetch full article content from a Chosun.com article URL
+   * Fetch full article content and images from a Chosun.com article URL
    * @param url - Article URL
-   * @returns Full article content as string
+   * @returns Article data with content and image URLs
    */
-  async fetchArticleContent(url: string): Promise<string> {
+  async fetchArticleContent(url: string): Promise<ArticleData> {
     try {
       this.logger.debug(`Fetching article content from: ${url}`);
 
       const html = await this.fetchHtml(url);
-      const content = this.parseArticleContent(html);
+      const articleData = this.parseArticleContent(html);
 
-      if (!content || content.length === 0) {
+      if (!articleData.content || articleData.content.length === 0) {
         this.logger.warn(`No content found for URL: ${url}`);
-        return '';
+        return { content: '', imageUrls: [] };
       }
 
-      this.logger.debug(`Successfully fetched ${content.length} characters from ${url}`);
-      return content;
+      this.logger.debug(`Successfully fetched ${articleData.content.length} characters and ${articleData.imageUrls.length} images from ${url}`);
+      return articleData;
     } catch (error) {
       this.logger.error(`Failed to fetch article content from ${url}:`, error.message);
-      return '';
+      return { content: '', imageUrls: [] };
     }
   }
 
   /**
    * Fetch multiple articles in parallel with concurrency limit
    * @param urls - Array of article URLs
-   * @returns Array of article contents (same order as input)
+   * @returns Array of article data (same order as input)
    */
-  async fetchMultipleArticles(urls: string[]): Promise<string[]> {
-    const results: string[] = new Array(urls.length).fill('');
+  async fetchMultipleArticles(urls: string[]): Promise<ArticleData[]> {
+    const results: ArticleData[] = new Array(urls.length).fill(null).map(() => ({ content: '', imageUrls: [] }));
 
     // Process in batches to limit concurrent requests
     for (let i = 0; i < urls.length; i += this.maxConcurrent) {
@@ -49,8 +54,8 @@ export class ArticleScraperService {
       );
 
       // Store results in correct positions
-      batchResults.forEach((content, index) => {
-        results[i + index] = content;
+      batchResults.forEach((articleData, index) => {
+        results[i + index] = articleData;
       });
     }
 
@@ -80,14 +85,14 @@ export class ArticleScraperService {
    * Method 1 (Primary): Extract Fusion.globalContent from JavaScript
    * Method 2 (Fallback): Extract text from <p class="article-body__content-text">
    * @param html - HTML string
-   * @returns Article content as string
+   * @returns Article data with content and image URLs
    */
-  private parseArticleContent(html: string): string {
+  private parseArticleContent(html: string): ArticleData {
     // Method 1: Try to extract Fusion.globalContent from JavaScript
-    const fusionContent = this.extractFusionGlobalContent(html);
-    if (fusionContent) {
+    const fusionData = this.extractFusionGlobalContent(html);
+    if (fusionData.content) {
       this.logger.debug('Successfully extracted content from Fusion.globalContent');
-      return fusionContent;
+      return fusionData;
     }
 
     // Method 2: Fallback to cheerio HTML parsing
@@ -96,18 +101,18 @@ export class ArticleScraperService {
   }
 
   /**
-   * Extract article content from Fusion.globalContent JavaScript object
+   * Extract article content and images from Fusion.globalContent JavaScript object
    * @param html - HTML string
-   * @returns Article content or empty string if not found
+   * @returns Article data with content and image URLs
    */
-  private extractFusionGlobalContent(html: string): string {
+  private extractFusionGlobalContent(html: string): ArticleData {
     try {
       // Regex to match: Fusion.globalContent = {...};
       const regex = /Fusion\.globalContent\s*=\s*(\{[\s\S]*?\});/;
       const match = html.match(regex);
 
       if (!match || !match[1]) {
-        return '';
+        return { content: '', imageUrls: [] };
       }
 
       // Parse JSON
@@ -115,24 +120,42 @@ export class ArticleScraperService {
 
       // Extract content from content_elements array
       if (!Array.isArray(globalContent.content_elements)) {
-        return '';
+        return { content: '', imageUrls: [] };
       }
 
       const contentParts: string[] = [];
+      const imageUrls: string[] = [];
+
       globalContent.content_elements.forEach((item: any) => {
-        // Only include items with type "text" and non-empty content
+        // Extract text content
         if (item.type === 'text' && item.content) {
           const cleanContent = this.removeEscapeCharacters(item.content.trim());
           if (cleanContent) {
             contentParts.push(cleanContent);
           }
         }
+
+        // Extract image URLs (skip GIFs as FFmpeg doesn't handle them well with -loop option)
+        if (item.type === 'image' && item.url) {
+          const urlLower = item.url.toLowerCase();
+          if (!urlLower.endsWith('.gif')) {
+            imageUrls.push(item.url);
+            this.logger.debug(`Extracted image URL: ${item.url}`);
+          } else {
+            this.logger.debug(`Skipped GIF image: ${item.url}`);
+          }
+        }
       });
 
-      return contentParts.join('\n\n');
+      this.logger.debug(`Extracted ${contentParts.length} text parts and ${imageUrls.length} images from Fusion.globalContent`);
+
+      return {
+        content: contentParts.join('\n\n'),
+        imageUrls,
+      };
     } catch (error) {
       this.logger.warn('Failed to parse Fusion.globalContent:', error.message);
-      return '';
+      return { content: '', imageUrls: [] };
     }
   }
 
@@ -140,9 +163,9 @@ export class ArticleScraperService {
    * Parse article content from HTML using cheerio (fallback method)
    * Extracts text from <p class="article-body__content-text">
    * @param html - HTML string
-   * @returns Article content as string
+   * @returns Article data with content (no images in fallback mode)
    */
-  private parseHtmlContent(html: string): string {
+  private parseHtmlContent(html: string): ArticleData {
     const $ = cheerio.load(html);
 
     // Find all paragraphs with article-body__content-text class
@@ -157,11 +180,14 @@ export class ArticleScraperService {
 
     if (paragraphs.length === 0) {
       this.logger.debug('No paragraphs found with .article-body__content-text class');
-      return '';
+      return { content: '', imageUrls: [] };
     }
 
     // Join paragraphs with double newline
-    return paragraphs.join('\n\n');
+    return {
+      content: paragraphs.join('\n\n'),
+      imageUrls: [], // Fallback method doesn't extract images
+    };
   }
 
   /**

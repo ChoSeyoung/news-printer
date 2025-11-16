@@ -8,6 +8,7 @@ export interface ThumbnailOptions {
   category: string;
   date?: Date;
   imageUrl?: string;
+  backgroundImagePath?: string; // Path to background image file
 }
 
 @Injectable()
@@ -48,21 +49,37 @@ export class ThumbnailService {
       // 카테고리별 색상 가져오기
       const colors = this.categoryColors[options.category] || this.categoryColors.default;
 
-      // 배경 생성 (단색)
-      const background = await this.createBackground(colors.background);
+      // 배경 생성 (이미지 또는 단색)
+      const background = options.backgroundImagePath
+        ? await this.createImageBackground(options.backgroundImagePath)
+        : await this.createBackground(colors.background);
 
       // 텍스트 SVG 생성 (BBC 스타일)
       const textSvg = this.createTextSvg(options.title, colors.accent);
 
-      // 배경 + 텍스트 합성
+      // 배경 이미지가 있으면 검정색 반투명 오버레이 추가
+      const compositeInputs: Array<{ input: Buffer; top: number; left: number }> = [];
+
+      if (options.backgroundImagePath) {
+        // 검정색 반투명 오버레이 (opacity 60%)
+        const darkOverlay = await this.createDarkOverlay();
+        compositeInputs.push({
+          input: darkOverlay,
+          top: 0,
+          left: 0,
+        });
+      }
+
+      // 텍스트 레이어 추가
+      compositeInputs.push({
+        input: Buffer.from(textSvg),
+        top: 0,
+        left: 0,
+      });
+
+      // 배경 + 오버레이 + 텍스트 합성
       await sharp(background)
-        .composite([
-          {
-            input: Buffer.from(textSvg),
-            top: 0,
-            left: 0,
-          },
-        ])
+        .composite(compositeInputs)
         .jpeg({ quality: 90 })
         .toFile(outputPath);
 
@@ -72,6 +89,42 @@ export class ThumbnailService {
       this.logger.error('Failed to generate thumbnail:', error.message);
       throw error;
     }
+  }
+
+  /**
+   * 이미지 파일을 썸네일 배경으로 생성
+   */
+  private async createImageBackground(imagePath: string): Promise<Buffer> {
+    try {
+      // 이미지를 썸네일 크기로 리사이즈하고 크롭
+      return await sharp(imagePath)
+        .resize(this.width, this.height, {
+          fit: 'cover',
+          position: 'center',
+        })
+        .png()
+        .toBuffer();
+    } catch (error) {
+      this.logger.error('Failed to create image background, using solid color:', error.message);
+      // 이미지 로드 실패 시 기본 단색 배경 사용
+      return this.createBackground('#1f2937');
+    }
+  }
+
+  /**
+   * 검정색 반투명 오버레이 생성 (텍스트 가독성 향상)
+   */
+  private async createDarkOverlay(): Promise<Buffer> {
+    // SVG로 검정색 반투명 오버레이 생성
+    const svg = `
+      <svg width="${this.width}" height="${this.height}">
+        <rect width="${this.width}" height="${this.height}" fill="rgba(0, 0, 0, 0.6)" />
+      </svg>
+    `;
+
+    return sharp(Buffer.from(svg))
+      .png()
+      .toBuffer();
   }
 
   /**

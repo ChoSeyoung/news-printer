@@ -121,6 +121,7 @@ export class NewsController {
             reporterScript: item.reporter!,
             privacyStatus,
             newsUrl: item.link,
+            imageUrls: item.imageUrls,
           });
 
           if (result.success) {

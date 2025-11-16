@@ -41,21 +41,22 @@ export class NewsService {
       // Fetch full content if requested
       if (includeFullContent) {
         this.logger.log(`Fetching full content for ${limitedItems.length} articles`);
-        const contents = await this.articleScraper.fetchMultipleArticles(
+        const articleDataList = await this.articleScraper.fetchMultipleArticles(
           limitedItems.map((item) => item.link),
         );
 
         // Generate AI scripts for articles with content
         for (let i = 0; i < limitedItems.length; i++) {
           const item = limitedItems[i];
-          const content = contents[i];
+          const articleData = articleDataList[i];
 
-          item.fullContent = content;
+          item.fullContent = articleData.content;
+          item.imageUrls = articleData.imageUrls;
 
           // Generate anchor and reporter scripts if content exists
-          if (content && content.length > 0) {
+          if (articleData.content && articleData.content.length > 0) {
             this.logger.debug(`Generating scripts for article: ${item.title}`);
-            const scripts = await this.geminiService.generateScripts(content);
+            const scripts = await this.geminiService.generateScripts(articleData.content);
             item.anchor = scripts.anchor;
             item.reporter = scripts.reporter;
           }

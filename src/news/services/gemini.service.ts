@@ -7,6 +7,11 @@ export interface ScriptResponse {
   reporter: string;
 }
 
+export interface ThumbnailImageSelection {
+  selectedIndex: number;
+  reason: string;
+}
+
 @Injectable()
 export class GeminiService {
   private readonly logger = new Logger(GeminiService.name);
@@ -118,6 +123,95 @@ export class GeminiService {
       this.logger.error('Failed to parse script response:', error.message);
       this.logger.debug('Raw response text:', text);
       return { anchor: '', reporter: '' };
+    }
+  }
+
+  /**
+   * Select best thumbnail image from background images
+   * @param title - News title
+   * @param newsContent - News content
+   * @param imageCount - Number of available images
+   * @returns Selected image index (0-based)
+   */
+  async selectBestThumbnailImage(
+    title: string,
+    newsContent: string,
+    imageCount: number,
+  ): Promise<number> {
+    try {
+      this.logger.debug('Selecting best thumbnail image with Gemini API');
+
+      const prompt = `다음 뉴스 기사의 썸네일로 사용할 배경 이미지를 ${imageCount}개 중에서 선택해주세요.
+
+뉴스 제목: ${title}
+뉴스 내용: ${newsContent}
+
+배경 이미지는 0번부터 ${imageCount - 1}번까지 총 ${imageCount}개가 있습니다.
+각 이미지는 뉴스와 관련된 키워드로 검색된 이미지입니다.
+
+썸네일로 가장 적합한 이미지의 인덱스 번호(0-${imageCount - 1})를 선택해주세요.
+선택 기준:
+1. 뉴스 제목과 내용을 가장 잘 표현하는 이미지
+2. 시각적으로 강렬하고 클릭을 유도할 수 있는 이미지
+3. 뉴스의 핵심 메시지를 전달하기 좋은 이미지
+
+응답은 JSON 형식으로 작성하되, 마크다운 문법 없이 순수 JSON만 반환해주세요.
+형식: {"selectedIndex": 숫자, "reason": "선택 이유"}
+
+첫 번째 이미지(0번)를 선택하는 것이 일반적으로 가장 적합합니다.`;
+
+      const result = await this.model.generateContent(prompt);
+      const response = result.response;
+      const text = response.text();
+
+      this.logger.debug(`Received thumbnail selection: ${text}`);
+
+      const selection = this.parseThumbnailSelection(text, imageCount);
+      this.logger.debug(`Selected image index: ${selection.selectedIndex}, reason: ${selection.reason}`);
+
+      return selection.selectedIndex;
+    } catch (error) {
+      this.logger.error('Failed to select thumbnail image with Gemini:', error.message);
+      // Default to first image on error
+      return 0;
+    }
+  }
+
+  /**
+   * Parse thumbnail selection response from Gemini API
+   * @param text - Response text from Gemini
+   * @param imageCount - Number of available images
+   * @returns ThumbnailImageSelection object
+   */
+  private parseThumbnailSelection(text: string, imageCount: number): ThumbnailImageSelection {
+    try {
+      // Remove markdown code block if present
+      let jsonText = text.trim();
+
+      if (jsonText.startsWith('```json')) {
+        jsonText = jsonText.replace(/^```json\s*/, '').replace(/```\s*$/, '');
+      } else if (jsonText.startsWith('```')) {
+        jsonText = jsonText.replace(/^```\s*/, '').replace(/```\s*$/, '');
+      }
+
+      const parsed = JSON.parse(jsonText.trim());
+
+      // Validate structure
+      if (typeof parsed.selectedIndex !== 'number') {
+        this.logger.warn('Invalid thumbnail selection response, using default (0)');
+        return { selectedIndex: 0, reason: 'Default selection (parsing error)' };
+      }
+
+      // Validate index range
+      const index = Math.max(0, Math.min(parsed.selectedIndex, imageCount - 1));
+
+      return {
+        selectedIndex: index,
+        reason: parsed.reason || 'No reason provided',
+      };
+    } catch (error) {
+      this.logger.error('Failed to parse thumbnail selection:', error.message);
+      return { selectedIndex: 0, reason: 'Default selection (parsing error)' };
     }
   }
 

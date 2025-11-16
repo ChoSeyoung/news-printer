@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { MediaController } from './media.controller';
 import { AuthController } from './controllers/auth.controller';
 import { TtsService } from './services/tts.service';
@@ -11,8 +11,10 @@ import { ThumbnailService } from './services/thumbnail.service';
 import { KeywordExtractionService } from './services/keyword-extraction.service';
 import { ImageSearchService } from './services/image-search.service';
 import { PublishedNewsTrackingService } from './services/published-news-tracking.service';
+import { NewsModule } from '../news/news.module';
 
 @Module({
+  imports: [forwardRef(() => NewsModule)],
   controllers: [MediaController, AuthController],
   providers: [
     TtsService,

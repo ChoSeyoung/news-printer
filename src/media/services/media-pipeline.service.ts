@@ -7,6 +7,7 @@ import { ThumbnailService } from './thumbnail.service';
 import { KeywordExtractionService } from './keyword-extraction.service';
 import { ImageSearchService } from './image-search.service';
 import { PublishedNewsTrackingService } from './published-news-tracking.service';
+import { GeminiService } from '../../news/services/gemini.service';
 
 export interface PublishNewsOptions {
   title: string;
@@ -15,6 +16,7 @@ export interface PublishNewsOptions {
   reporterScript: string;
   privacyStatus?: 'public' | 'private' | 'unlisted';
   newsUrl?: string;
+  imageUrls?: string[]; // RSS feed image URLs
 }
 
 export interface PublishNewsResult {
@@ -54,6 +56,7 @@ export class MediaPipelineService {
     private readonly keywordExtractionService: KeywordExtractionService,
     private readonly imageSearchService: ImageSearchService,
     private readonly publishedNewsTrackingService: PublishedNewsTrackingService,
+    private readonly geminiService: GeminiService,
   ) {}
 
   /**
@@ -101,17 +104,33 @@ export class MediaPipelineService {
       anchorAudioPath = anchorPath;
       reporterAudioPath = reporterPath;
 
-      // Step 2: Extract keywords and search for background images
-      this.logger.log('Step 2/6: Searching for background images');
+      // Step 2: Download background images (RSS images first, then Pexels/Unsplash if needed)
+      this.logger.log('Step 2/6: Downloading background images');
       try {
-        const keywords = await this.keywordExtractionService.extractKeywords(
-          options.title,
-          options.newsContent,
-        );
-        this.logger.debug(`Extracted keywords: ${keywords}`);
+        // First, download images from RSS feed if available
+        if (options.imageUrls && options.imageUrls.length > 0) {
+          this.logger.log(`Found ${options.imageUrls.length} images from RSS feed`);
+          backgroundImagePaths = await this.imageSearchService.downloadImagesFromUrls(options.imageUrls);
+          this.logger.log(`Downloaded ${backgroundImagePaths.length} images from RSS feed`);
+        }
 
-        backgroundImagePaths = await this.imageSearchService.searchAndDownloadImages(keywords, 4);
-        this.logger.log(`Downloaded ${backgroundImagePaths.length} background images`);
+        // If we need more images, search Pexels/Unsplash
+        const targetImageCount = 4;
+        if (backgroundImagePaths.length < targetImageCount) {
+          const remainingCount = targetImageCount - backgroundImagePaths.length;
+          this.logger.log(`Need ${remainingCount} more images, searching Pexels/Unsplash`);
+
+          const keywords = await this.keywordExtractionService.extractKeywords(
+            options.title,
+            options.newsContent,
+          );
+          this.logger.debug(`Extracted keywords: ${keywords}`);
+
+          const searchedImages = await this.imageSearchService.searchAndDownloadImages(keywords, remainingCount);
+          backgroundImagePaths = [...backgroundImagePaths, ...searchedImages];
+        }
+
+        this.logger.log(`Total ${backgroundImagePaths.length} background images ready`);
       } catch (error) {
         this.logger.warn('Failed to get background images, using default:', error.message);
         backgroundImagePaths = [];
@@ -137,7 +156,7 @@ export class MediaPipelineService {
       this.logger.debug(`SEO tags count: ${seoMetadata.tags.length}`);
       this.logger.debug(`Category ID: ${seoMetadata.categoryId}`);
 
-      // Step 5: Generate thumbnail
+      // Step 5: Generate thumbnail with AI-selected background image
       this.logger.log('Step 5/6: Generating thumbnail');
 
       // SEO 메타데이터의 category 한글로 변환
@@ -149,10 +168,28 @@ export class MediaPipelineService {
       };
       const category = categoryMap[seoMetadata.categoryId] || '사회';
 
+      // Gemini로 썸네일에 가장 적합한 이미지 선택
+      let selectedImagePath: string | undefined;
+      if (backgroundImagePaths.length > 0) {
+        try {
+          const selectedIndex = await this.geminiService.selectBestThumbnailImage(
+            options.title,
+            options.newsContent,
+            backgroundImagePaths.length,
+          );
+          selectedImagePath = backgroundImagePaths[selectedIndex];
+          this.logger.debug(`Gemini selected image ${selectedIndex} for thumbnail: ${selectedImagePath}`);
+        } catch (error) {
+          this.logger.warn('Failed to select image with Gemini, using first image:', error.message);
+          selectedImagePath = backgroundImagePaths[0];
+        }
+      }
+
       thumbnailPath = await this.thumbnailService.generateThumbnail({
         title: options.title,
         category: category,
         date: new Date(),
+        backgroundImagePath: selectedImagePath,
       });
 
       this.logger.debug(`Thumbnail created: ${thumbnailPath}`);
