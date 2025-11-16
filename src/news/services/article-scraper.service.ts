@@ -2,29 +2,63 @@ import { Injectable, Logger } from '@nestjs/common';
 import axios from 'axios';
 import * as cheerio from 'cheerio';
 
+/**
+ * 기사 데이터 인터페이스
+ */
 export interface ArticleData {
+  /** 기사 전체 내용 */
   content: string;
+  /** 기사 이미지 URL 배열 */
   imageUrls: string[];
 }
 
+/**
+ * 기사 스크래핑 서비스
+ *
+ * 조선일보 기사 페이지에서 전체 내용과 이미지를 추출합니다.
+ *
+ * 주요 기능:
+ * - Fusion.globalContent JSON에서 기사 내용 및 이미지 추출 (주 방법)
+ * - HTML 파싱을 통한 기사 내용 추출 (대체 방법)
+ * - GIF 이미지 자동 필터링 (FFmpeg 호환성)
+ * - 병렬 처리를 통한 다중 기사 스크래핑
+ */
 @Injectable()
 export class ArticleScraperService {
   private readonly logger = new Logger(ArticleScraperService.name);
+
+  /** HTTP 요청 타임아웃 (밀리초) */
   private readonly timeout = 10000;
+
+  /** 최대 동시 요청 수 (병렬 처리 제한) */
   private readonly maxConcurrent = 5;
 
   /**
-   * Fetch full article content and images from a Chosun.com article URL
-   * @param url - Article URL
-   * @returns Article data with content and image URLs
+   * 조선일보 기사 URL에서 전체 내용 및 이미지를 가져옵니다
+   *
+   * @param url - 기사 URL
+   * @returns 기사 데이터 (내용, 이미지 URL)
+   *
+   * 추출 방법:
+   * 1. 방법 1 (주): Fusion.globalContent JavaScript 객체에서 추출
+   *    - JSON 형식으로 구조화된 데이터
+   *    - 이미지 URL 포함
+   *    - GIF 이미지 자동 필터링
+   * 2. 방법 2 (대체): HTML 파싱으로 <p class="article-body__content-text"> 추출
+   *    - Fusion.globalContent를 찾을 수 없을 때 사용
+   *    - 이미지는 추출하지 않음
    */
   async fetchArticleContent(url: string): Promise<ArticleData> {
     try {
       this.logger.debug(`Fetching article content from: ${url}`);
 
+      // HTML 다운로드
       const html = await this.fetchHtml(url);
+
+      // 기사 내용 파싱
       const articleData = this.parseArticleContent(html);
 
+      // 내용이 비어있으면 경고
       if (!articleData.content || articleData.content.length === 0) {
         this.logger.warn(`No content found for URL: ${url}`);
         return { content: '', imageUrls: [] };
@@ -39,21 +73,30 @@ export class ArticleScraperService {
   }
 
   /**
-   * Fetch multiple articles in parallel with concurrency limit
-   * @param urls - Array of article URLs
-   * @returns Array of article data (same order as input)
+   * 여러 기사를 병렬로 가져옵니다 (동시 요청 수 제한)
+   *
+   * @param urls - 기사 URL 배열
+   * @returns 기사 데이터 배열 (입력 순서와 동일)
+   *
+   * 병렬 처리 방식:
+   * - maxConcurrent 개씩 배치로 나눠서 처리
+   * - 각 배치는 Promise.all로 병렬 실행
+   * - 순서는 입력 URL 배열과 동일하게 유지
    */
   async fetchMultipleArticles(urls: string[]): Promise<ArticleData[]> {
+    // 결과 배열 초기화 (순서 유지를 위해 미리 생성)
     const results: ArticleData[] = new Array(urls.length).fill(null).map(() => ({ content: '', imageUrls: [] }));
 
-    // Process in batches to limit concurrent requests
+    // 배치 단위로 처리 (동시 요청 수 제한)
     for (let i = 0; i < urls.length; i += this.maxConcurrent) {
       const batch = urls.slice(i, i + this.maxConcurrent);
+
+      // 현재 배치 병렬 실행
       const batchResults = await Promise.all(
         batch.map((url) => this.fetchArticleContent(url)),
       );
 
-      // Store results in correct positions
+      // 결과를 올바른 위치에 저장
       batchResults.forEach((articleData, index) => {
         results[i + index] = articleData;
       });
@@ -63,9 +106,15 @@ export class ArticleScraperService {
   }
 
   /**
-   * Fetch HTML content from URL
-   * @param url - URL to fetch
-   * @returns HTML string
+   * URL에서 HTML을 가져옵니다
+   *
+   * @param url - 가져올 URL
+   * @returns HTML 문자열
+   *
+   * 요청 헤더:
+   * - User-Agent: 봇 차단 방지
+   * - Accept: HTML 문서 요청
+   * - Accept-Language: 한국어 우선
    */
   private async fetchHtml(url: string): Promise<string> {
     const response = await axios.get(url, {
@@ -81,33 +130,47 @@ export class ArticleScraperService {
   }
 
   /**
-   * Parse article content from HTML
-   * Method 1 (Primary): Extract Fusion.globalContent from JavaScript
-   * Method 2 (Fallback): Extract text from <p class="article-body__content-text">
-   * @param html - HTML string
-   * @returns Article data with content and image URLs
+   * HTML에서 기사 내용을 파싱합니다
+   *
+   * @param html - HTML 문자열
+   * @returns 기사 데이터 (내용, 이미지 URL)
+   *
+   * 추출 우선순위:
+   * 1. Fusion.globalContent (주 방법) - JavaScript 객체에서 구조화된 데이터 추출
+   * 2. HTML 파싱 (대체 방법) - Cheerio로 HTML 태그에서 텍스트 추출
    */
   private parseArticleContent(html: string): ArticleData {
-    // Method 1: Try to extract Fusion.globalContent from JavaScript
+    // 방법 1: Fusion.globalContent에서 추출 시도
     const fusionData = this.extractFusionGlobalContent(html);
     if (fusionData.content) {
       this.logger.debug('Successfully extracted content from Fusion.globalContent');
       return fusionData;
     }
 
-    // Method 2: Fallback to cheerio HTML parsing
+    // 방법 2: HTML 파싱으로 대체
     this.logger.debug('Fusion.globalContent not found, falling back to HTML parsing');
     return this.parseHtmlContent(html);
   }
 
   /**
-   * Extract article content and images from Fusion.globalContent JavaScript object
-   * @param html - HTML string
-   * @returns Article data with content and image URLs
+   * Fusion.globalContent JavaScript 객체에서 기사 내용 및 이미지를 추출합니다
+   *
+   * @param html - HTML 문자열
+   * @returns 기사 데이터 (내용, 이미지 URL)
+   *
+   * 추출 프로세스:
+   * 1. 정규식으로 `Fusion.globalContent = {...};` 패턴 찾기
+   * 2. JSON 파싱
+   * 3. content_elements 배열에서 텍스트 및 이미지 추출
+   * 4. GIF 이미지 필터링 (FFmpeg와 호환되지 않음)
+   *
+   * content_elements 구조:
+   * - type: 'text' -> content 필드에 텍스트
+   * - type: 'image' -> url 필드에 이미지 URL
    */
   private extractFusionGlobalContent(html: string): ArticleData {
     try {
-      // Regex to match: Fusion.globalContent = {...};
+      // 정규식: Fusion.globalContent = {...};
       const regex = /Fusion\.globalContent\s*=\s*(\{[\s\S]*?\});/;
       const match = html.match(regex);
 
@@ -115,10 +178,10 @@ export class ArticleScraperService {
         return { content: '', imageUrls: [] };
       }
 
-      // Parse JSON
+      // JSON 파싱
       const globalContent = JSON.parse(match[1]);
 
-      // Extract content from content_elements array
+      // content_elements 배열 확인
       if (!Array.isArray(globalContent.content_elements)) {
         return { content: '', imageUrls: [] };
       }
@@ -126,8 +189,9 @@ export class ArticleScraperService {
       const contentParts: string[] = [];
       const imageUrls: string[] = [];
 
+      // content_elements 순회
       globalContent.content_elements.forEach((item: any) => {
-        // Extract text content
+        // 텍스트 추출
         if (item.type === 'text' && item.content) {
           const cleanContent = this.removeEscapeCharacters(item.content.trim());
           if (cleanContent) {
@@ -135,7 +199,7 @@ export class ArticleScraperService {
           }
         }
 
-        // Extract image URLs (skip GIFs as FFmpeg doesn't handle them well with -loop option)
+        // 이미지 URL 추출 (GIF 제외 - FFmpeg의 -loop 옵션과 호환되지 않음)
         if (item.type === 'image' && item.url) {
           const urlLower = item.url.toLowerCase();
           if (!urlLower.endsWith('.gif')) {
@@ -160,15 +224,19 @@ export class ArticleScraperService {
   }
 
   /**
-   * Parse article content from HTML using cheerio (fallback method)
-   * Extracts text from <p class="article-body__content-text">
-   * @param html - HTML string
-   * @returns Article data with content (no images in fallback mode)
+   * Cheerio를 사용하여 HTML에서 기사 내용을 파싱합니다 (대체 방법)
+   *
+   * @param html - HTML 문자열
+   * @returns 기사 데이터 (내용만, 이미지 없음)
+   *
+   * 추출 방법:
+   * - <p class="article-body__content-text"> 요소에서 텍스트 추출
+   * - 대체 방법이므로 이미지는 추출하지 않음
    */
   private parseHtmlContent(html: string): ArticleData {
     const $ = cheerio.load(html);
 
-    // Find all paragraphs with article-body__content-text class
+    // article-body__content-text 클래스를 가진 모든 <p> 태그 찾기
     const paragraphs: string[] = [];
 
     $('.article-body__content-text').each((_, element) => {
@@ -183,17 +251,26 @@ export class ArticleScraperService {
       return { content: '', imageUrls: [] };
     }
 
-    // Join paragraphs with double newline
+    // 단락들을 이중 개행으로 연결
     return {
       content: paragraphs.join('\n\n'),
-      imageUrls: [], // Fallback method doesn't extract images
+      imageUrls: [], // 대체 방법에서는 이미지 추출 안 함
     };
   }
 
   /**
-   * Remove escape characters from content
-   * @param content - Content string with potential escape characters
-   * @returns Cleaned content string
+   * 문자열에서 이스케이프 문자를 실제 문자로 변환합니다
+   *
+   * @param content - 이스케이프 문자가 포함된 문자열
+   * @returns 변환된 문자열
+   *
+   * 변환 항목:
+   * - \\n -> 개행
+   * - \\r -> 캐리지 리턴
+   * - \\t -> 탭
+   * - \\" -> 큰따옴표
+   * - \\' -> 작은따옴표
+   * - \\\\ -> 백슬래시
    */
   private removeEscapeCharacters(content: string): string {
     return content

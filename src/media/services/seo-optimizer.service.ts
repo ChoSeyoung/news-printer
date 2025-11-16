@@ -2,28 +2,80 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 
+/**
+ * SEO 메타데이터 인터페이스
+ */
 export interface SeoMetadata {
+  /** 최적화된 영상 제목 (100자 이내) */
   optimizedTitle: string;
+  /** 최적화된 영상 설명 (키워드 포함) */
   optimizedDescription: string;
+  /** 태그 배열 (최대 30개) */
   tags: string[];
+  /** YouTube 카테고리 ID */
   categoryId: string;
+  /** 추출된 핵심 키워드 배열 */
   keywords: string[];
 }
 
+/**
+ * SEO 최적화 입력 데이터 인터페이스
+ */
 export interface SeoInput {
+  /** 원본 뉴스 제목 */
   originalTitle: string;
+  /** 뉴스 본문 내용 */
   newsContent: string;
+  /** 앵커 대본 */
   anchorScript: string;
+  /** 리포터 대본 */
   reporterScript: string;
 }
 
+/**
+ * YouTube SEO 최적화 서비스
+ *
+ * Google Gemini AI를 활용하여 YouTube 알고리즘에 최적화된 메타데이터를 생성합니다.
+ * 뉴스 콘텐츠를 분석하여 검색 친화적인 제목, 설명, 태그를 자동으로 생성합니다.
+ *
+ * 주요 기능:
+ * - Gemini AI 기반 콘텐츠 분석 및 키워드 추출
+ * - 검색 최적화된 제목 생성 (100자 제한)
+ * - SEO 친화적인 설명 작성 (키워드 해시태그 포함)
+ * - 다양한 카테고리 태그 자동 생성 (최대 30개)
+ * - YouTube 카테고리 자동 매핑
+ *
+ * SEO 최적화 전략:
+ * - 검색량이 높은 키워드 우선 선정
+ * - 롱테일 키워드 포함으로 틈새 검색 타겟팅
+ * - 자연스러운 뉴스 채널 스타일 유지
+ * - 해시태그 최적화 (공백 제거, 중복 제거)
+ *
+ * @example
+ * ```typescript
+ * const seoMetadata = await seoOptimizerService.generateSeoMetadata({
+ *   originalTitle: '대통령 신년 기자회견',
+ *   newsContent: '대통령이 신년 기자회견을 개최했습니다...',
+ *   anchorScript: '안녕하세요. 뉴스입니다...',
+ *   reporterScript: '김철수 기자입니다...'
+ * });
+ * // seoMetadata: { optimizedTitle, optimizedDescription, tags, categoryId, keywords }
+ * ```
+ */
 @Injectable()
 export class SeoOptimizerService {
   private readonly logger = new Logger(SeoOptimizerService.name);
+  /** Google Gemini AI 클라이언트 */
   private readonly genAI: GoogleGenerativeAI;
+  /** Gemini 모델 인스턴스 (gemini-2.5-flash-lite) */
   private readonly model;
 
-  // 유튜브 알고리즘 친화적 이모지
+  /**
+   * 유튜브 알고리즘 친화적 이모지 (현재 미사용)
+   *
+   * 향후 제목이나 설명에 이모지를 추가할 때 사용할 수 있는
+   * 카테고리별 이모지 맵입니다.
+   */
   private readonly trendingEmojis = {
     breaking: ['🔥', '⚡', '🚨', '📢'],
     important: ['⭐', '💡', '👀', '📌'],
@@ -37,6 +89,14 @@ export class SeoOptimizerService {
     },
   };
 
+  /**
+   * SeoOptimizerService 생성자
+   *
+   * Google Gemini AI 클라이언트를 초기화합니다.
+   *
+   * @param configService - NestJS 환경 설정 서비스
+   * @throws {Error} GEMINI_API_KEY 환경 변수가 설정되지 않은 경우
+   */
   constructor(private configService: ConfigService) {
     const apiKey = this.configService.get<string>('GEMINI_API_KEY');
     if (!apiKey) {
@@ -48,23 +108,50 @@ export class SeoOptimizerService {
   }
 
   /**
-   * 유튜브 알고리즘 최적화를 위한 SEO 메타데이터 생성
+   * YouTube SEO 최적화 메타데이터 생성
+   *
+   * 뉴스 콘텐츠를 분석하여 YouTube 알고리즘에 최적화된 메타데이터를 생성합니다.
+   *
+   * 처리 단계:
+   * 1. Gemini AI로 콘텐츠 분석 및 키워드 추출
+   * 2. 제목 최적화 (원본 제목 유지, 100자 제한)
+   * 3. 설명 최적화 (완전한 요약 + 키워드 해시태그)
+   * 4. 태그 생성 (다양한 카테고리, 최대 30개)
+   * 5. YouTube 카테고리 ID 선택
+   *
+   * @param input - SEO 최적화 입력 데이터
+   * @returns SEO 최적화된 메타데이터
+   * @throws {Error} Gemini API 호출 실패 또는 분석 실패 시
+   *
+   * @example
+   * ```typescript
+   * const metadata = await seoOptimizerService.generateSeoMetadata({
+   *   originalTitle: '경제 성장률 3% 돌파',
+   *   newsContent: '올해 경제 성장률이 3%를 돌파했습니다...',
+   *   anchorScript: '경제 뉴스입니다...',
+   *   reporterScript: '경제부 이영희 기자입니다...'
+   * });
+   *
+   * console.log(metadata.optimizedTitle); // '경제 성장률 3% 돌파'
+   * console.log(metadata.tags.length);    // 30 (최대)
+   * console.log(metadata.categoryId);     // '25' (뉴스/정치)
+   * ```
    */
   async generateSeoMetadata(input: SeoInput): Promise<SeoMetadata> {
     try {
       this.logger.log('Generating SEO-optimized metadata for YouTube');
 
-      // Gemini로 키워드 추출 및 분석
+      // 1단계: Gemini로 키워드 추출 및 분석
       const analysis = await this.analyzeContent(input);
 
-      // 제목 최적화
+      // 2단계: 제목 최적화
       const optimizedTitle = this.optimizeTitle(
         input.originalTitle,
         analysis.keywords,
         analysis.category,
       );
 
-      // 설명 최적화
+      // 3단계: 설명 최적화
       const optimizedDescription = this.optimizeDescription(
         input.newsContent,
         input.anchorScript,
@@ -72,10 +159,10 @@ export class SeoOptimizerService {
         analysis.keywords,
       );
 
-      // 태그 생성
+      // 4단계: 태그 생성
       const tags = this.generateTags(analysis.keywords, analysis.category);
 
-      // 카테고리 ID 결정
+      // 5단계: 카테고리 ID 결정
       const categoryId = this.selectCategoryId(analysis.category);
 
       this.logger.log('SEO metadata generated successfully');
@@ -94,7 +181,23 @@ export class SeoOptimizerService {
   }
 
   /**
-   * Gemini로 콘텐츠 분석 및 키워드 추출
+   * Gemini AI로 콘텐츠 분석 및 키워드 추출
+   *
+   * 뉴스 콘텐츠를 Gemini AI에게 전달하여 다음 정보를 추출합니다:
+   * - 검색 최적화 키워드 10개 (검색량 높은 순서)
+   * - 뉴스 카테고리 분류
+   * - 핵심 주제 요약
+   *
+   * 키워드 선정 기준:
+   * 1. 검색량이 높은 키워드 우선
+   * 2. 뉴스의 핵심 내용과 직접 관련
+   * 3. 롱테일 키워드 포함 (틈새 검색 타겟팅)
+   * 4. 트렌딩 키워드 고려
+   *
+   * @param input - SEO 분석 입력 데이터
+   * @returns 분석 결과 (키워드, 카테고리, 핵심 주제)
+   *
+   * @private
    */
   private async analyzeContent(input: SeoInput): Promise<{
     keywords: string[];
@@ -120,10 +223,11 @@ export class SeoOptimizerService {
 3. 롱테일 키워드 포함
 4. 트렌딩 키워드 고려`;
 
+      // Gemini AI 호출
       const result = await this.model.generateContent(prompt);
       const text = result.response.text();
 
-      // JSON 파싱
+      // JSON 파싱 (코드 블록 제거)
       let jsonText = text.trim();
       if (jsonText.startsWith('```json')) {
         jsonText = jsonText.replace(/^```json\s*/, '').replace(/```\s*$/, '');
@@ -142,7 +246,7 @@ export class SeoOptimizerService {
       };
     } catch (error) {
       this.logger.error('Failed to analyze content:', error.message);
-      // 기본값 반환
+      // Gemini 분석 실패 시 기본값 반환
       return {
         keywords: [input.originalTitle],
         category: '사회',
@@ -152,8 +256,22 @@ export class SeoOptimizerService {
   }
 
   /**
-   * 제목 최적화: 원본 제목 사용 (썸네일과 동일)
-   * 100자 이내로 제한
+   * 제목 최적화
+   *
+   * 원본 제목을 그대로 사용하되, YouTube 제목 길이 제한(100자)을 준수합니다.
+   * 썸네일에 표시되는 제목과 동일하게 유지하여 일관성을 보장합니다.
+   *
+   * 최적화 규칙:
+   * - 원본 제목 유지 (썸네일과 동일)
+   * - 100자 초과 시 97자로 자르고 '...' 추가
+   * - 자연스러운 뉴스 제목 스타일 유지
+   *
+   * @param originalTitle - 원본 뉴스 제목
+   * @param keywords - 추출된 키워드 배열 (현재 미사용)
+   * @param category - 뉴스 카테고리 (현재 미사용)
+   * @returns 최적화된 제목 (100자 이내)
+   *
+   * @private
    */
   private optimizeTitle(
     originalTitle: string,
@@ -172,7 +290,25 @@ export class SeoOptimizerService {
   }
 
   /**
-   * 설명 최적화: 자연스러운 뉴스 채널 스타일 설명 (이모지 제거)
+   * 설명 최적화
+   *
+   * 자연스러운 뉴스 채널 스타일의 설명을 생성합니다.
+   * 앵커와 리포터 대본을 기반으로 완전한 요약을 작성하고,
+   * 키워드 해시태그를 추가하여 검색 최적화를 강화합니다.
+   *
+   * 설명 구성:
+   * 1. 날짜 정보 ("YYYY년 MM월 DD일 주요 뉴스입니다.")
+   * 2. 뉴스 완전 요약 (앵커 + 리포터 대본 조합, 300자 이내)
+   * 3. 구독/좋아요 안내
+   * 4. 해시태그 (#뉴스 #속보 + 키워드 해시태그)
+   *
+   * @param newsContent - 뉴스 본문 (현재 미사용)
+   * @param anchorScript - 앵커 대본
+   * @param reporterScript - 리포터 대본
+   * @param keywords - 추출된 키워드 배열
+   * @returns 최적화된 설명
+   *
+   * @private
    */
   private optimizeDescription(
     newsContent: string,
@@ -206,7 +342,23 @@ ${summary}
   }
 
   /**
-   * 뉴스 내용의 완전한 요약 생성 (말줄임표 없이)
+   * 뉴스 내용의 완전한 요약 생성
+   *
+   * 앵커와 리포터 대본을 조합하여 말줄임표 없이 완전한 요약을 생성합니다.
+   * 문장 단위로 잘라서 자연스러운 마침을 보장합니다.
+   *
+   * 요약 생성 과정:
+   * 1. 앵커 대본과 리포터 대본을 연결
+   * 2. 300자 이내로 제한
+   * 3. 문장 단위로 잘라서 자연스럽게 마침
+   * 4. 마지막 구두점(. ? !) 이후로 잘림
+   *
+   * @param newsContent - 뉴스 본문 (현재 미사용)
+   * @param anchorScript - 앵커 대본
+   * @param reporterScript - 리포터 대본
+   * @returns 완전한 요약 (300자 이내)
+   *
+   * @private
    */
   private createCompleteSummary(
     newsContent: string,
@@ -240,6 +392,7 @@ ${summary}
     let summary = '';
     let i = 0;
 
+    // 300자 이내에서 최대한 많은 문장 포함
     while (i < sentences.length && (summary + sentences[i]).length <= 300) {
       summary += sentences[i];
       i++;
@@ -261,8 +414,24 @@ ${summary}
   }
 
   /**
-   * 태그 생성: 다양한 카테고리의 태그 조합
-   * 최대 30개 제한 (공백 제거)
+   * 태그 생성
+   *
+   * 다양한 카테고리의 태그를 조합하여 YouTube 검색 최적화를 강화합니다.
+   * 최대 30개 제한을 준수하며, 공백을 제거하고 중복을 제거합니다.
+   *
+   * 태그 구성:
+   * 1. 핵심 키워드 5개 (Gemini 추출)
+   * 2. 카테고리 태그 2개 (예: '정치', '정치뉴스')
+   * 3. 일반 뉴스 태그 6개 ('뉴스', '속보' 등)
+   * 4. 시간 관련 태그 4개 (연도, 월 등)
+   * 5. 뉴스 타입 태그 3개 ('현장뉴스', '심층분석' 등)
+   * 6. 롱테일 키워드 (나머지 키워드)
+   *
+   * @param keywords - 추출된 키워드 배열
+   * @param category - 뉴스 카테고리
+   * @returns 태그 배열 (최대 30개, 중복 제거됨)
+   *
+   * @private
    */
   private generateTags(keywords: string[], category: string): string[] {
     const tags: string[] = [];
@@ -298,8 +467,25 @@ ${summary}
   }
 
   /**
-   * 카테고리 ID 선택
-   * 유튜브 카테고리 ID 참고: https://developers.google.com/youtube/v3/docs/videoCategories/list
+   * YouTube 카테고리 ID 선택
+   *
+   * 뉴스 카테고리를 YouTube 카테고리 ID로 매핑합니다.
+   * YouTube Data API v3의 카테고리 ID를 사용합니다.
+   *
+   * 카테고리 매핑:
+   * - 정치, 경제, 사회, 국제 → '25' (뉴스/정치)
+   * - 과학기술 → '28' (과학/기술)
+   * - 문화 → '24' (엔터테인먼트)
+   * - 스포츠 → '17' (스포츠)
+   * - 기타 → '25' (기본값: 뉴스/정치)
+   *
+   * YouTube 카테고리 ID 참고:
+   * https://developers.google.com/youtube/v3/docs/videoCategories/list
+   *
+   * @param category - 뉴스 카테고리
+   * @returns YouTube 카테고리 ID
+   *
+   * @private
    */
   private selectCategoryId(category: string): string {
     const categoryMap: Record<string, string> = {
