@@ -46,7 +46,7 @@ export class TtsService {
         input: { text: options.text },
         voice: {
           languageCode: 'ko-KR',
-          name: options.voice === 'MALE' ? 'ko-KR-Standard-C' : 'ko-KR-Standard-A',
+          name: options.voice === 'MALE' ? 'ko-KR-Chirp3-HD-Alnilam' : 'ko-KR-Chirp3-HD-Aoede',
         },
         audioConfig: {
           audioEncoding: 'LINEAR16',
