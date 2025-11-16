@@ -2,6 +2,10 @@ import { Injectable, Logger } from '@nestjs/common';
 import ffmpeg from 'fluent-ffmpeg';
 import * as fs from 'fs-extra';
 import * as path from 'path';
+import { exec } from 'child_process';
+import { promisify } from 'util';
+
+const execAsync = promisify(exec);
 
 export interface VideoOptions {
   audioFiles: string[];
@@ -18,36 +22,23 @@ export class VideoService {
   constructor() {
     // Ensure temp directory exists
     fs.ensureDirSync(this.tempDir);
-    // Create black background image if it doesn't exist
-    this.createBlackBackground();
   }
 
   /**
-   * Create a 10-second black background video file
-   * This template will be reused and trimmed to match audio duration
+   * Get audio duration using ffprobe
+   * @param audioPath - Path to audio file
+   * @returns Duration in seconds
    */
-  private async createBlackBackground(): Promise<void> {
-    const blackVideoPath = path.join(this.tempDir, 'black_template.mp4');
-
-    if (await fs.pathExists(blackVideoPath)) {
-      return;
-    }
-
-    this.logger.debug('Creating black video template');
-
-    // Create a 10-second black video using shell command
-    // This avoids all the lavfi/fluent-ffmpeg issues
+  private async getAudioDuration(audioPath: string): Promise<number> {
     return new Promise((resolve, reject) => {
-      const { exec } = require('child_process');
-      const cmd = `ffmpeg -f lavfi -i color=c=black:s=1920x1080:r=25 -t 10 -pix_fmt yuv420p -y "${blackVideoPath}"`;
-
-      exec(cmd, (error: any) => {
-        if (error) {
-          this.logger.warn('Could not create black video template, will use alternative method');
-          resolve(); // Don't fail, just continue without template
+      ffmpeg.ffprobe(audioPath, (err, metadata) => {
+        if (err) {
+          this.logger.error('Failed to get audio duration:', err.message);
+          reject(err);
         } else {
-          this.logger.debug('Black video template created');
-          resolve();
+          const duration = metadata.format.duration || 0;
+          this.logger.debug(`Audio duration: ${duration} seconds`);
+          resolve(duration);
         }
       });
     });
@@ -132,46 +123,46 @@ export class VideoService {
     outputPath: string,
     dimensions: { width: number; height: number },
   ): Promise<void> {
-    return new Promise((resolve, reject) => {
+    try {
       this.logger.debug('Generating video with FFmpeg');
 
-      const blackVideoPath = path.join(this.tempDir, 'black_template.mp4');
+      // Get audio duration first
+      const audioDuration = await this.getAudioDuration(audioPath);
+      this.logger.debug(`Creating black video of ${audioDuration} seconds to match audio`);
 
-      // Use the black video template and combine with audio
-      // The -shortest option will trim the video to match audio duration
-      ffmpeg()
-        .input(blackVideoPath)
-        .input(audioPath)
-        .outputOptions([
-          '-map 0:v', // video from black template
-          '-map 1:a', // audio from audio file
-          '-shortest', // trim to shortest input (audio)
-        ])
-        .videoCodec('libx264')
-        .outputOptions([
-          '-pix_fmt yuv420p',
-          '-preset ultrafast',
-          '-crf 23',
-        ])
-        .audioCodec('aac')
-        .audioBitrate('192k')
-        .output(outputPath)
-        .on('start', (commandLine) => {
-          this.logger.debug('FFmpeg command:', commandLine);
-        })
-        .on('progress', (progress) => {
-          this.logger.debug(`Processing: ${progress.percent?.toFixed(2)}% done`);
-        })
-        .on('error', (err) => {
-          this.logger.error('FFmpeg error:', err.message);
-          reject(err);
-        })
-        .on('end', () => {
-          this.logger.debug('FFmpeg processing finished');
-          resolve();
-        })
-        .run();
-    });
+      // Generate black video matching audio duration, then combine with audio
+      const blackVideoPath = path.join(this.tempDir, `black_${Date.now()}.mp4`);
+
+      // Step 1: Create black video with exact audio duration using raw FFmpeg command
+      const createBlackCmd = `ffmpeg -f lavfi -i color=c=black:s=${dimensions.width}x${dimensions.height}:r=25 -t ${audioDuration} -pix_fmt yuv420p -y "${blackVideoPath}"`;
+      this.logger.debug(`Creating black video: ${createBlackCmd}`);
+
+      try {
+        await execAsync(createBlackCmd);
+        this.logger.debug('Black video created successfully');
+      } catch (error) {
+        this.logger.error('Failed to create black video:', error.message);
+        throw error;
+      }
+
+      // Step 2: Combine black video with audio using raw FFmpeg command
+      const combineCmd = `ffmpeg -i "${blackVideoPath}" -i "${audioPath}" -map 0:v -map 1:a -c:v copy -c:a aac -b:a 192k -y "${outputPath}"`;
+      this.logger.debug(`Combining video and audio: ${combineCmd}`);
+
+      try {
+        await execAsync(combineCmd);
+        this.logger.debug('FFmpeg processing finished');
+      } catch (error) {
+        this.logger.error('FFmpeg error:', error.message);
+        throw error;
+      } finally {
+        // Clean up temporary black video
+        await fs.remove(blackVideoPath).catch(() => {});
+      }
+    } catch (error) {
+      this.logger.error('Failed to generate video:', error.message);
+      throw error;
+    }
   }
 
   /**
