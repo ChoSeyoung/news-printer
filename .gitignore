@@ -64,3 +64,9 @@ temp/
 *.mp3
 *.mp4
 *.wav
+google-credentials.json
+client_secret.json
+.tokens/
+publish-result.json
+server.log
+server.pid
