@@ -14,9 +14,9 @@ export class MediaController {
       this.logger.log(`Publishing news: ${dto.title}`);
 
       // Validate input
-      if (!dto.title || !dto.anchorScript || !dto.reporterScript) {
+      if (!dto.title || !dto.newsContent || !dto.anchorScript || !dto.reporterScript) {
         throw new HttpException(
-          'Missing required fields: title, anchorScript, and reporterScript are required',
+          'Missing required fields: title, newsContent, anchorScript, and reporterScript are required',
           HttpStatus.BAD_REQUEST,
         );
       }
@@ -24,6 +24,7 @@ export class MediaController {
       // Process through pipeline
       const result = await this.mediaPipeline.publishNews({
         title: dto.title,
+        newsContent: dto.newsContent,
         anchorScript: dto.anchorScript,
         reporterScript: dto.reporterScript,
         privacyStatus: dto.privacyStatus || 'unlisted',

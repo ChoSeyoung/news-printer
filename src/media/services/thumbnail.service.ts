@@ -17,16 +17,16 @@ export class ThumbnailService {
   private readonly width = 1280;
   private readonly height = 720;
 
-  // 카테고리별 색상 테마
-  private readonly categoryColors: Record<string, { start: string; end: string; emoji: string }> = {
-    '정치': { start: '#2563eb', end: '#1e40af', emoji: '🏛️' },
-    '경제': { start: '#059669', end: '#047857', emoji: '💰' },
-    '사회': { start: '#dc2626', end: '#b91c1c', emoji: '👥' },
-    '국제': { start: '#7c3aed', end: '#6d28d9', emoji: '🌍' },
-    '과학기술': { start: '#ea580c', end: '#c2410c', emoji: '💻' },
-    '문화': { start: '#db2777', end: '#be185d', emoji: '🎭' },
-    '스포츠': { start: '#0891b2', end: '#0e7490', emoji: '⚽' },
-    default: { start: '#1f2937', end: '#111827', emoji: '📢' },
+  // BBC 스타일 카테고리별 색상 테마 (단색 배경)
+  private readonly categoryColors: Record<string, { background: string; accent: string; emoji: string }> = {
+    '정치': { background: '#1a1a2e', accent: '#e94560', emoji: '🏛️' },
+    '경제': { background: '#0f2027', accent: '#2c5364', emoji: '💰' },
+    '사회': { background: '#2d3436', accent: '#74b9ff', emoji: '👥' },
+    '국제': { background: '#1e3a8a', accent: '#60a5fa', emoji: '🌍' },
+    '과학기술': { background: '#1e293b', accent: '#f97316', emoji: '💻' },
+    '문화': { background: '#312e81', accent: '#a78bfa', emoji: '🎭' },
+    '스포츠': { background: '#065f46', accent: '#34d399', emoji: '⚽' },
+    default: { background: '#1f2937', accent: '#f3f4f6', emoji: '📢' },
   };
 
   constructor() {
@@ -34,11 +34,11 @@ export class ThumbnailService {
   }
 
   /**
-   * 썸네일 자동 생성
+   * BBC 스타일 썸네일 자동 생성
    */
   async generateThumbnail(options: ThumbnailOptions): Promise<string> {
     try {
-      this.logger.log(`Generating thumbnail for: ${options.title}`);
+      this.logger.log(`Generating BBC-style thumbnail for: ${options.title}`);
 
       const outputPath = path.join(
         this.tempDir,
@@ -48,11 +48,11 @@ export class ThumbnailService {
       // 카테고리별 색상 가져오기
       const colors = this.categoryColors[options.category] || this.categoryColors.default;
 
-      // 배경 생성
-      const background = await this.createBackground(colors.start, colors.end);
+      // 배경 생성 (단색)
+      const background = await this.createBackground(colors.background);
 
-      // 텍스트 SVG 생성
-      const textSvg = this.createTextSvg(options.title, options.date, colors.emoji);
+      // 텍스트 SVG 생성 (BBC 스타일)
+      const textSvg = this.createTextSvg(options.title, colors.accent);
 
       // 배경 + 텍스트 합성
       await sharp(background)
@@ -75,19 +75,13 @@ export class ThumbnailService {
   }
 
   /**
-   * 그라데이션 배경 생성
+   * BBC 스타일 단색 배경 생성
    */
-  private async createBackground(startColor: string, endColor: string): Promise<Buffer> {
-    // SVG 그라데이션 배경
+  private async createBackground(backgroundColor: string): Promise<Buffer> {
+    // SVG 단색 배경 (어두운 톤)
     const svg = `
       <svg width="${this.width}" height="${this.height}">
-        <defs>
-          <linearGradient id="grad" x1="0%" y1="0%" x2="100%" y2="100%">
-            <stop offset="0%" style="stop-color:${startColor};stop-opacity:1" />
-            <stop offset="100%" style="stop-color:${endColor};stop-opacity:1" />
-          </linearGradient>
-        </defs>
-        <rect width="${this.width}" height="${this.height}" fill="url(#grad)" />
+        <rect width="${this.width}" height="${this.height}" fill="${backgroundColor}" />
       </svg>
     `;
 
@@ -97,62 +91,62 @@ export class ThumbnailService {
   }
 
   /**
-   * 텍스트 SVG 오버레이 생성
+   * BBC 스타일 텍스트 SVG 오버레이 생성
    */
-  private createTextSvg(title: string, date: Date = new Date(), emoji: string): string {
-    // 제목 줄바꿈 처리 (40자마다)
-    const maxCharsPerLine = 35;
+  private createTextSvg(title: string, accentColor: string): string {
+    // 제목 줄바꿈 처리 (여백 고려하여 25자마다)
+    const maxCharsPerLine = 25;
     const titleLines = this.wrapText(title, maxCharsPerLine);
 
-    // 날짜 포맷
-    const dateStr = `${date.getMonth() + 1}월 ${date.getDate()}일 ${date.getHours()}시`;
-
-    // 텍스트 위치 계산
-    const startY = 150;
-    const lineHeight = 100;
+    const lineHeight = 65;
+    const startY = 280;
+    const leftMargin = 120;
+    const rightMargin = 100; // 우측 여백 확보
 
     // SVG 텍스트 생성
     let textElements = '';
 
-    // 날짜/시간 (상단) - emoji 제거하고 날짜만 표시
+    // 상단 악센트 바 (BBC 스타일)
     textElements += `
-      <text x="640" y="150"
-            font-size="48"
-            text-anchor="middle"
-            fill="#fbbf24"
-            font-weight="bold">
-        ${dateStr} 속보
+      <rect x="80" y="60" width="8" height="80" fill="${accentColor}" />
+    `;
+
+    // YBC News 로고 (악센트 바 우측)
+    textElements += `
+      <text x="110" y="110"
+            font-size="32"
+            text-anchor="start"
+            fill="white"
+            font-weight="700"
+            font-family="system-ui, -apple-system, sans-serif"
+            letter-spacing="1">
+        YBC News
       </text>
     `;
 
-    // 제목 (중앙, 여러 줄)
+    // 제목 (좌측 정렬, 여백 내에서 깔끔한 타이포그래피)
     titleLines.forEach((line, index) => {
-      const y = 300 + (index * lineHeight);
-      const fontSize = titleLines.length > 2 ? 60 : 70;
+      const y = startY + (index * lineHeight);
+      // 줄 수에 따라 폰트 크기 조정 (여백 고려)
+      let fontSize = 58;
+      if (titleLines.length > 2) {
+        fontSize = 50;
+      }
+      if (titleLines.length > 3) {
+        fontSize = 45;
+      }
 
       textElements += `
-        <text x="640" y="${y}"
+        <text x="${leftMargin}" y="${y}"
               font-size="${fontSize}"
-              text-anchor="middle"
+              text-anchor="start"
               fill="white"
-              font-weight="bold"
-              stroke="black"
-              stroke-width="3">
+              font-weight="600"
+              font-family="system-ui, -apple-system, sans-serif">
           ${this.escapeXml(line)}
         </text>
       `;
     });
-
-    // "뉴스프린터" 브랜딩 (하단)
-    textElements += `
-      <text x="640" y="650"
-            font-size="36"
-            text-anchor="middle"
-            fill="#d1d5db"
-            font-weight="bold">
-        AI 뉴스프린터
-      </text>
-    `;
 
     return `
       <svg width="${this.width}" height="${this.height}">

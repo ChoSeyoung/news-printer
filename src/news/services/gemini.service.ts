@@ -76,6 +76,7 @@ export class GeminiService {
   /**
    * Parse script response from Gemini API
    * Handles both pure JSON and markdown code block wrapped JSON
+   * Handles both string and array responses
    * @param text - Response text from Gemini
    * @returns ScriptResponse object
    */
@@ -100,10 +101,18 @@ export class GeminiService {
         return { anchor: '', reporter: '' };
       }
 
+      // Convert arrays to strings if needed
+      const anchorText = Array.isArray(parsed.anchor)
+        ? parsed.anchor.join('\n\n')
+        : parsed.anchor;
+      const reporterText = Array.isArray(parsed.reporter)
+        ? parsed.reporter.join('\n\n')
+        : parsed.reporter;
+
       // Remove escape characters
       return {
-        anchor: this.removeEscapeCharacters(parsed.anchor),
-        reporter: this.removeEscapeCharacters(parsed.reporter),
+        anchor: this.removeEscapeCharacters(anchorText),
+        reporter: this.removeEscapeCharacters(reporterText),
       };
     } catch (error) {
       this.logger.error('Failed to parse script response:', error.message);

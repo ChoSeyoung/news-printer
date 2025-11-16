@@ -115,6 +115,7 @@ export class NewsController {
 
           const result = await this.mediaPipeline.publishNews({
             title: item.title,
+            newsContent: item.fullContent || item.description || item.title,
             anchorScript: item.anchor!,
             reporterScript: item.reporter!,
             privacyStatus,

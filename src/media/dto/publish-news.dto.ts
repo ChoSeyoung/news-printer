@@ -1,5 +1,6 @@
 export class PublishNewsDto {
   title: string;
+  newsContent: string;
   anchorScript: string;
   reporterScript: string;
   privacyStatus?: 'public' | 'private' | 'unlisted';
