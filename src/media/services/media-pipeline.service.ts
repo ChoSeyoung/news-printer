@@ -2,9 +2,12 @@ import { Injectable, Logger } from '@nestjs/common';
 import { TtsService } from './tts.service';
 import { VideoService } from './video.service';
 import { YoutubeService, YoutubeUploadResult } from './youtube.service';
+import { SeoOptimizerService } from './seo-optimizer.service';
+import { ThumbnailService } from './thumbnail.service';
 
 export interface PublishNewsOptions {
   title: string;
+  newsContent: string;
   anchorScript: string;
   reporterScript: string;
   privacyStatus?: 'public' | 'private' | 'unlisted';
@@ -26,6 +29,8 @@ export class MediaPipelineService {
     private readonly ttsService: TtsService,
     private readonly videoService: VideoService,
     private readonly youtubeService: YoutubeService,
+    private readonly seoOptimizerService: SeoOptimizerService,
+    private readonly thumbnailService: ThumbnailService,
   ) {}
 
   /**
@@ -42,12 +47,13 @@ export class MediaPipelineService {
     let anchorAudioPath: string | null = null;
     let reporterAudioPath: string | null = null;
     let videoPath: string | null = null;
+    let thumbnailPath: string | null = null;
 
     try {
       this.logger.log(`Starting media pipeline for: ${options.title}`);
 
       // Step 1: Generate TTS audio files
-      this.logger.log('Step 1/3: Generating TTS audio');
+      this.logger.log('Step 1/5: Generating TTS audio');
       const { anchorPath, reporterPath } = await this.ttsService.generateNewsScripts(
         options.anchorScript,
         options.reporterScript,
@@ -56,24 +62,58 @@ export class MediaPipelineService {
       reporterAudioPath = reporterPath;
 
       // Step 2: Create video from audio
-      this.logger.log('Step 2/3: Creating video');
+      this.logger.log('Step 2/5: Creating video');
       videoPath = await this.videoService.createVideo({
         audioFiles: [anchorPath, reporterPath],
       });
 
-      // Step 3: Upload to YouTube
-      this.logger.log('Step 3/3: Uploading to YouTube');
+      // Step 3: Generate SEO-optimized metadata
+      this.logger.log('Step 3/5: Generating SEO metadata');
+      const seoMetadata = await this.seoOptimizerService.generateSeoMetadata({
+        originalTitle: options.title,
+        newsContent: options.newsContent,
+        anchorScript: options.anchorScript,
+        reporterScript: options.reporterScript,
+      });
+
+      this.logger.debug(`SEO optimized title: ${seoMetadata.optimizedTitle}`);
+      this.logger.debug(`SEO tags count: ${seoMetadata.tags.length}`);
+      this.logger.debug(`Category ID: ${seoMetadata.categoryId}`);
+
+      // Step 4: Generate thumbnail
+      this.logger.log('Step 4/5: Generating thumbnail');
+
+      // SEO 메타데이터의 category 한글로 변환
+      const categoryMap: Record<string, string> = {
+        '25': '정치',
+        '28': '과학기술',
+        '24': '문화',
+        '17': '스포츠',
+      };
+      const category = categoryMap[seoMetadata.categoryId] || '사회';
+
+      thumbnailPath = await this.thumbnailService.generateThumbnail({
+        title: options.title,
+        category: category,
+        date: new Date(),
+      });
+
+      this.logger.debug(`Thumbnail created: ${thumbnailPath}`);
+
+      // Step 5: Upload to YouTube with SEO metadata and thumbnail
+      this.logger.log('Step 5/5: Uploading to YouTube');
       const uploadResult: YoutubeUploadResult = await this.youtubeService.uploadVideo({
         videoPath,
-        title: options.title,
-        description: this.buildVideoDescription(options),
-        tags: ['news', 'automated', 'korean'],
-        categoryId: '25', // News & Politics
+        title: seoMetadata.optimizedTitle,
+        description: seoMetadata.optimizedDescription,
+        tags: seoMetadata.tags,
+        categoryId: seoMetadata.categoryId,
         privacyStatus: options.privacyStatus || 'unlisted',
+        thumbnailPath,
       });
 
       // Clean up temporary files
-      await this.cleanup(anchorAudioPath, reporterAudioPath, videoPath);
+      await this.cleanup(anchorAudioPath, reporterAudioPath, videoPath, thumbnailPath);
 
       if (uploadResult.success) {
         this.logger.log(`Media pipeline completed successfully: ${uploadResult.videoUrl}`);
@@ -94,7 +134,7 @@ export class MediaPipelineService {
       this.logger.error('Media pipeline error:', error.message);
 
       // Attempt cleanup on error
-      await this.cleanup(anchorAudioPath, reporterAudioPath, videoPath);
+      await this.cleanup(anchorAudioPath, reporterAudioPath, videoPath, thumbnailPath);
 
       return {
         success: false,
@@ -135,6 +175,8 @@ ${options.reporterScript}
             await this.ttsService.deleteAudioFile(filepath);
           } else if (filepath.endsWith('.mp4')) {
             await this.videoService.deleteVideoFile(filepath);
+          } else if (filepath.endsWith('.jpg') || filepath.endsWith('.png') || filepath.endsWith('.jpeg')) {
+            await this.thumbnailService.deleteThumbnail(filepath);
           }
         } catch (error) {
           this.logger.warn(`Cleanup error for ${filepath}:`, error.message);

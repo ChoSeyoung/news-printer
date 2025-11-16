@@ -12,6 +12,7 @@ export interface YoutubeUploadOptions {
   tags?: string[];
   categoryId?: string;
   privacyStatus?: 'public' | 'private' | 'unlisted';
+  thumbnailPath?: string;
 }
 
 export interface YoutubeUploadResult {
@@ -130,6 +131,17 @@ export class YoutubeService {
 
       this.logger.log(`Video uploaded successfully: ${videoUrl}`);
 
+      // Upload thumbnail if provided
+      if (options.thumbnailPath && videoId) {
+        try {
+          await this.uploadThumbnail(videoId, options.thumbnailPath);
+          this.logger.log(`Thumbnail uploaded successfully for video: ${videoId}`);
+        } catch (thumbnailError) {
+          this.logger.warn(`Failed to upload thumbnail: ${thumbnailError.message}`);
+          // Don't fail the entire upload if thumbnail fails
+        }
+      }
+
       return {
         success: true,
         videoId,
@@ -141,6 +153,30 @@ export class YoutubeService {
         success: false,
         error: error.message,
       };
+    }
+  }
+
+  /**
+   * Upload thumbnail for a YouTube video
+   * @param videoId - YouTube video ID
+   * @param thumbnailPath - Path to thumbnail image
+   */
+  private async uploadThumbnail(videoId: string, thumbnailPath: string): Promise<void> {
+    try {
+      this.logger.debug(`Uploading thumbnail for video: ${videoId}`);
+
+      const response = await this.youtube.thumbnails.set({
+        videoId: videoId,
+        media: {
+          mimeType: 'image/jpeg',
+          body: fs.createReadStream(thumbnailPath),
+        },
+      });
+
+      this.logger.debug(`Thumbnail upload response: ${JSON.stringify(response.data)}`);
+    } catch (error) {
+      this.logger.error(`Failed to upload thumbnail for ${videoId}:`, error.message);
+      throw error;
     }
   }
 
