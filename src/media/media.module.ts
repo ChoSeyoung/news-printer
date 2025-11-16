@@ -8,10 +8,24 @@ import { MediaPipelineService } from './services/media-pipeline.service';
 import { TokenService } from './services/token.service';
 import { SeoOptimizerService } from './services/seo-optimizer.service';
 import { ThumbnailService } from './services/thumbnail.service';
+import { KeywordExtractionService } from './services/keyword-extraction.service';
+import { ImageSearchService } from './services/image-search.service';
+import { PublishedNewsTrackingService } from './services/published-news-tracking.service';
 
 @Module({
   controllers: [MediaController, AuthController],
-  providers: [TtsService, VideoService, YoutubeService, MediaPipelineService, TokenService, SeoOptimizerService, ThumbnailService],
+  providers: [
+    TtsService,
+    VideoService,
+    YoutubeService,
+    MediaPipelineService,
+    TokenService,
+    SeoOptimizerService,
+    ThumbnailService,
+    KeywordExtractionService,
+    ImageSearchService,
+    PublishedNewsTrackingService,
+  ],
   exports: [MediaPipelineService],
 })
 export class MediaModule {}

@@ -12,6 +12,7 @@ export interface VideoOptions {
   outputPath?: string;
   width?: number;
   height?: number;
+  backgroundImagePath?: string;
 }
 
 @Injectable()
@@ -99,6 +100,7 @@ export class VideoService {
       await this.generateVideo(combinedAudioPath, outputPath, {
         width: options.width || 1920,
         height: options.height || 1080,
+        backgroundImagePath: options.backgroundImagePath,
       });
 
       // Clean up combined audio file
@@ -116,37 +118,54 @@ export class VideoService {
    * Generate video with static background and audio
    * @param audioPath - Path to audio file
    * @param outputPath - Path for output video
-   * @param dimensions - Video dimensions
+   * @param dimensions - Video dimensions and optional background image
    */
   private async generateVideo(
     audioPath: string,
     outputPath: string,
-    dimensions: { width: number; height: number },
+    dimensions: { width: number; height: number; backgroundImagePath?: string },
   ): Promise<void> {
     try {
       this.logger.debug('Generating video with FFmpeg');
 
       // Get audio duration first
       const audioDuration = await this.getAudioDuration(audioPath);
-      this.logger.debug(`Creating black video of ${audioDuration} seconds to match audio`);
+      const tempVideoPath = path.join(this.tempDir, `temp_video_${Date.now()}.mp4`);
 
-      // Generate black video matching audio duration, then combine with audio
-      const blackVideoPath = path.join(this.tempDir, `black_${Date.now()}.mp4`);
+      if (dimensions.backgroundImagePath && await fs.pathExists(dimensions.backgroundImagePath)) {
+        // Use background image
+        this.logger.debug(`Creating video with background image: ${dimensions.backgroundImagePath}`);
+        this.logger.debug(`Video duration: ${audioDuration} seconds`);
 
-      // Step 1: Create black video with exact audio duration using raw FFmpeg command
-      const createBlackCmd = `ffmpeg -f lavfi -i color=c=black:s=${dimensions.width}x${dimensions.height}:r=25 -t ${audioDuration} -pix_fmt yuv420p -y "${blackVideoPath}"`;
-      this.logger.debug(`Creating black video: ${createBlackCmd}`);
+        // Step 1: Create video from background image with exact audio duration
+        const createImageVideoCmd = `ffmpeg -loop 1 -i "${dimensions.backgroundImagePath}" -t ${audioDuration} -vf "scale=${dimensions.width}:${dimensions.height}:force_original_aspect_ratio=increase,crop=${dimensions.width}:${dimensions.height}" -r 25 -pix_fmt yuv420p -y "${tempVideoPath}"`;
+        this.logger.debug(`Creating image-based video: ${createImageVideoCmd}`);
 
-      try {
-        await execAsync(createBlackCmd);
-        this.logger.debug('Black video created successfully');
-      } catch (error) {
-        this.logger.error('Failed to create black video:', error.message);
-        throw error;
+        try {
+          await execAsync(createImageVideoCmd);
+          this.logger.debug('Image-based video created successfully');
+        } catch (error) {
+          this.logger.error('Failed to create image-based video:', error.message);
+          throw error;
+        }
+      } else {
+        // Fallback to black background
+        this.logger.debug(`Creating black video of ${audioDuration} seconds`);
+
+        const createBlackCmd = `ffmpeg -f lavfi -i color=c=black:s=${dimensions.width}x${dimensions.height}:r=25 -t ${audioDuration} -pix_fmt yuv420p -y "${tempVideoPath}"`;
+        this.logger.debug(`Creating black video: ${createBlackCmd}`);
+
+        try {
+          await execAsync(createBlackCmd);
+          this.logger.debug('Black video created successfully');
+        } catch (error) {
+          this.logger.error('Failed to create black video:', error.message);
+          throw error;
+        }
       }
 
-      // Step 2: Combine black video with audio using raw FFmpeg command
-      const combineCmd = `ffmpeg -i "${blackVideoPath}" -i "${audioPath}" -map 0:v -map 1:a -c:v copy -c:a aac -b:a 192k -y "${outputPath}"`;
+      // Step 2: Combine video with audio using raw FFmpeg command
+      const combineCmd = `ffmpeg -i "${tempVideoPath}" -i "${audioPath}" -map 0:v -map 1:a -c:v copy -c:a aac -b:a 192k -y "${outputPath}"`;
       this.logger.debug(`Combining video and audio: ${combineCmd}`);
 
       try {
@@ -156,8 +175,8 @@ export class VideoService {
         this.logger.error('FFmpeg error:', error.message);
         throw error;
       } finally {
-        // Clean up temporary black video
-        await fs.remove(blackVideoPath).catch(() => {});
+        // Clean up temporary video
+        await fs.remove(tempVideoPath).catch(() => {});
       }
     } catch (error) {
       this.logger.error('Failed to generate video:', error.message);

@@ -4,6 +4,9 @@ import { VideoService } from './video.service';
 import { YoutubeService, YoutubeUploadResult } from './youtube.service';
 import { SeoOptimizerService } from './seo-optimizer.service';
 import { ThumbnailService } from './thumbnail.service';
+import { KeywordExtractionService } from './keyword-extraction.service';
+import { ImageSearchService } from './image-search.service';
+import { PublishedNewsTrackingService } from './published-news-tracking.service';
 
 export interface PublishNewsOptions {
   title: string;
@@ -11,6 +14,7 @@ export interface PublishNewsOptions {
   anchorScript: string;
   reporterScript: string;
   privacyStatus?: 'public' | 'private' | 'unlisted';
+  newsUrl?: string;
 }
 
 export interface PublishNewsResult {
@@ -47,6 +51,9 @@ export class MediaPipelineService {
     private readonly youtubeService: YoutubeService,
     private readonly seoOptimizerService: SeoOptimizerService,
     private readonly thumbnailService: ThumbnailService,
+    private readonly keywordExtractionService: KeywordExtractionService,
+    private readonly imageSearchService: ImageSearchService,
+    private readonly publishedNewsTrackingService: PublishedNewsTrackingService,
   ) {}
 
   /**
@@ -64,12 +71,29 @@ export class MediaPipelineService {
     let reporterAudioPath: string | null = null;
     let videoPath: string | null = null;
     let thumbnailPath: string | null = null;
+    let backgroundImagePath: string | null = null;
 
     try {
       this.logger.log(`Starting media pipeline for: ${options.title}`);
 
+      // Step 0: Check if already published (duplicate prevention)
+      if (options.newsUrl) {
+        if (this.publishedNewsTrackingService.isAlreadyPublished(options.newsUrl)) {
+          const existingRecord = this.publishedNewsTrackingService.getPublishedRecord(options.newsUrl);
+          this.logger.warn(`News already published: ${options.title}`);
+          this.logger.warn(`Previous upload: ${existingRecord?.videoUrl || 'URL not available'}`);
+
+          return {
+            success: false,
+            error: 'This news article has already been published',
+            videoUrl: existingRecord?.videoUrl,
+            videoId: existingRecord?.videoId,
+          };
+        }
+      }
+
       // Step 1: Generate TTS audio files
-      this.logger.log('Step 1/5: Generating TTS audio');
+      this.logger.log('Step 1/6: Generating TTS audio');
       const { anchorPath, reporterPath } = await this.ttsService.generateNewsScripts(
         options.anchorScript,
         options.reporterScript,
@@ -77,14 +101,31 @@ export class MediaPipelineService {
       anchorAudioPath = anchorPath;
       reporterAudioPath = reporterPath;
 
-      // Step 2: Create video from audio
-      this.logger.log('Step 2/5: Creating video');
+      // Step 2: Extract keywords and search for background image
+      this.logger.log('Step 2/6: Searching for background image');
+      try {
+        const keywords = await this.keywordExtractionService.extractKeywords(
+          options.title,
+          options.newsContent,
+        );
+        this.logger.debug(`Extracted keywords: ${keywords}`);
+
+        backgroundImagePath = await this.imageSearchService.searchAndDownloadImage(keywords);
+        this.logger.log(`Background image downloaded: ${backgroundImagePath}`);
+      } catch (error) {
+        this.logger.warn('Failed to get background image, using default:', error.message);
+        backgroundImagePath = null;
+      }
+
+      // Step 3: Create video from audio with background image
+      this.logger.log('Step 3/6: Creating video');
       videoPath = await this.videoService.createVideo({
         audioFiles: [anchorPath, reporterPath],
+        backgroundImagePath: backgroundImagePath || undefined,
       });
 
-      // Step 3: Generate SEO-optimized metadata
-      this.logger.log('Step 3/5: Generating SEO metadata');
+      // Step 4: Generate SEO-optimized metadata
+      this.logger.log('Step 4/6: Generating SEO metadata');
       const seoMetadata = await this.seoOptimizerService.generateSeoMetadata({
         originalTitle: options.title,
         newsContent: options.newsContent,
@@ -96,8 +137,8 @@ export class MediaPipelineService {
       this.logger.debug(`SEO tags count: ${seoMetadata.tags.length}`);
       this.logger.debug(`Category ID: ${seoMetadata.categoryId}`);
 
-      // Step 4: Generate thumbnail
-      this.logger.log('Step 4/5: Generating thumbnail');
+      // Step 5: Generate thumbnail
+      this.logger.log('Step 5/6: Generating thumbnail');
 
       // SEO 메타데이터의 category 한글로 변환
       const categoryMap: Record<string, string> = {
@@ -116,8 +157,8 @@ export class MediaPipelineService {
 
       this.logger.debug(`Thumbnail created: ${thumbnailPath}`);
 
-      // Step 5: Upload to YouTube with SEO metadata and thumbnail
-      this.logger.log('Step 5/5: Uploading to YouTube');
+      // Step 6: Upload to YouTube with SEO metadata and thumbnail
+      this.logger.log('Step 6/6: Uploading to YouTube');
       const uploadResult: YoutubeUploadResult = await this.youtubeService.uploadVideo({
         videoPath,
         title: seoMetadata.optimizedTitle,
@@ -128,10 +169,20 @@ export class MediaPipelineService {
         thumbnailPath,
       });
 
-      // Clean up temporary files
-      await this.cleanup(anchorAudioPath, reporterAudioPath, videoPath, thumbnailPath);
+      // Clean up temporary files (including background image)
+      await this.cleanup(anchorAudioPath, reporterAudioPath, videoPath, thumbnailPath, backgroundImagePath);
 
       if (uploadResult.success) {
+        // Mark news as published to prevent duplicates
+        if (options.newsUrl) {
+          await this.publishedNewsTrackingService.markAsPublished(
+            options.newsUrl,
+            options.title,
+            uploadResult.videoId,
+            uploadResult.videoUrl,
+          );
+        }
+
         this.logger.log(`Media pipeline completed successfully: ${uploadResult.videoUrl}`);
         return {
           success: true,
@@ -150,7 +201,7 @@ export class MediaPipelineService {
       this.logger.error('Media pipeline error:', error.message);
 
       // Attempt cleanup on error
-      await this.cleanup(anchorAudioPath, reporterAudioPath, videoPath, thumbnailPath);
+      await this.cleanup(anchorAudioPath, reporterAudioPath, videoPath, thumbnailPath, backgroundImagePath);
 
       return {
         success: false,
@@ -239,7 +290,12 @@ ${options.reporterScript}
           } else if (filepath.endsWith('.mp4')) {
             await this.videoService.deleteVideoFile(filepath);
           } else if (filepath.endsWith('.jpg') || filepath.endsWith('.png') || filepath.endsWith('.jpeg')) {
-            await this.thumbnailService.deleteThumbnail(filepath);
+            // Check if it's a thumbnail or background image
+            if (filepath.includes('thumbnail_') || filepath.includes('thumb_')) {
+              await this.thumbnailService.deleteThumbnail(filepath);
+            } else {
+              await this.imageSearchService.deleteImageFile(filepath);
+            }
           }
         } catch (error) {
           this.logger.warn(`Cleanup error for ${filepath}:`, error.message);

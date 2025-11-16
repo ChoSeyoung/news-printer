@@ -120,6 +120,7 @@ export class NewsController {
             anchorScript: item.anchor!,
             reporterScript: item.reporter!,
             privacyStatus,
+            newsUrl: item.link,
           });
 
           if (result.success) {

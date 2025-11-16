@@ -10,7 +10,26 @@
 
 GitHub 저장소의 Settings → Secrets and variables → Actions로 이동하여 다음 secrets를 추가해야 합니다:
 
-### 1. GEMINI_API_KEY
+### 1. PEXELS_API_KEY
+- **설명**: Pexels 이미지 검색 API 키 (뉴스 배경 이미지용)
+- **발급 방법**:
+  1. https://www.pexels.com/api/ 접속
+  2. "Get Started" 클릭하여 무료 계정 생성
+  3. API 페이지에서 API Key 확인
+  4. 무료 할당량: 시간당 200 요청
+- **값 예시**: `your-pexels-api-key-here`
+
+### 2. UNSPLASH_ACCESS_KEY
+- **설명**: Unsplash 이미지 검색 API 키 (Pexels 할당량 초과 시 폴백)
+- **발급 방법**:
+  1. https://unsplash.com/developers 접속
+  2. "Register as a developer" 클릭하여 개발자 계정 생성
+  3. "New Application" 생성
+  4. Access Key 복사
+  5. 무료 할당량: 시간당 50 요청
+- **값 예시**: `your-unsplash-access-key-here`
+
+### 3. GEMINI_API_KEY
 - **설명**: Google Gemini API 키 (뉴스 스크립트 생성용)
 - **발급 방법**:
   1. https://aistudio.google.com/app/apikey 접속
@@ -18,7 +37,7 @@ GitHub 저장소의 Settings → Secrets and variables → Actions로 이동하�
   3. 생성된 키 복사
 - **값 예시**: `AIzaSyA...`
 
-### 2. GOOGLE_CLOUD_CREDENTIALS
+### 4. GOOGLE_CLOUD_CREDENTIALS
 - **설명**: Google Cloud Text-to-Speech API 인증 JSON (음성 생성용)
 - **발급 방법**:
   1. https://console.cloud.google.com/ 접속
@@ -39,7 +58,7 @@ GitHub 저장소의 Settings → Secrets and variables → Actions로 이동하�
   }
   ```
 
-### 3. YOUTUBE_CLIENT_SECRET
+### 5. YOUTUBE_CLIENT_SECRET
 - **설명**: YouTube OAuth 2.0 클라이언트 시크릿
 - **발급 방법**:
   1. https://console.cloud.google.com/ 접속
@@ -50,7 +69,7 @@ GitHub 저장소의 Settings → Secrets and variables → Actions로 이동하�
   6. YouTube Data API v3 활성화 필요
 - **값**: 다운로드한 `client_secret.json` 파일 전체 내용
 
-### 4. YOUTUBE_TOKENS
+### 6. YOUTUBE_TOKENS
 - **설명**: YouTube 인증 토큰 (OAuth 인증 후 생성)
 - **발급 방법**:
   1. 로컬에서 한 번 YouTube 인증 완료

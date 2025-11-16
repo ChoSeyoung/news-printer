@@ -23,9 +23,26 @@
 
 ## Description
 
-News Printer - A NestJS application that fetches and serves news articles from Chosun.com RSS feeds.
+News Printer - An automated news video generation and publishing system built with NestJS.
 
-This application provides a RESTful API to retrieve news articles from various categories of Chosun.com, parsing RSS XML feeds and returning structured JSON responses.
+This application automatically:
+- Fetches news articles from Chosun.com RSS feeds
+- Generates AI-powered anchor and reporter scripts using Google Gemini
+- Creates news videos with background images, TTS audio, and professional thumbnails
+- Uploads videos to YouTube with SEO-optimized metadata
+- Prevents duplicate uploads with intelligent tracking
+
+## ✨ Features
+
+- **🤖 AI Script Generation**: Gemini-powered anchor and reporter script generation
+- **🎨 Dynamic Background Images**: Automatically searches and downloads relevant images from Pexels/Unsplash
+- **🗣️ High-Quality TTS**: Google Cloud Text-to-Speech with Chirp3-HD voices for natural Korean pronunciation
+- **📹 Video Creation**: FFmpeg-based video generation with background images and audio
+- **📺 YouTube Integration**: Automated upload with SEO-optimized titles, descriptions, and tags
+- **🖼️ BBC-Style Thumbnails**: Auto-generated professional news thumbnails
+- **🔄 Duplicate Prevention**: Smart tracking system to prevent re-uploading the same news
+- **⏰ GitHub Actions Automation**: Fully automated daily news publishing workflow
+- **🎯 Preview API**: Preview video metadata before actual publishing
 
 ## Project setup
 
