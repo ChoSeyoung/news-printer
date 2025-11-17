@@ -327,7 +327,7 @@ export class VideoService {
   ): Promise<string> {
     const segmentPath = path.join(this.tempDir, `segment_${Date.now()}_${index}.mp4`);
 
-    const createSegmentCmd = `ffmpeg -loop 1 -i "${imagePath}" -t ${duration} -vf "scale=${width}:${height}:force_original_aspect_ratio=increase,crop=${width}:${height}" -r 25 -pix_fmt yuv420p -y "${segmentPath}"`;
+    const createSegmentCmd = `ffmpeg -framerate 25 -loop 1 -i "${imagePath}" -t ${duration} -vf "scale=${width}:${height}:force_original_aspect_ratio=increase,crop=${width}:${height}" -pix_fmt yuv420p -y "${segmentPath}"`;
     this.logger.debug(`Creating segment ${index}: ${createSegmentCmd}`);
 
     try {
