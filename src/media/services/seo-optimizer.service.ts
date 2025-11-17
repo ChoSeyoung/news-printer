@@ -151,8 +151,8 @@ export class SeoOptimizerService {
         analysis.category,
       );
 
-      // 3단계: 설명 최적화
-      const optimizedDescription = this.optimizeDescription(
+      // 3단계: 설명 최적화 (Gemini AI 사용)
+      const optimizedDescription = await this.optimizeDescription(
         input.newsContent,
         input.anchorScript,
         input.reporterScript,
@@ -293,34 +293,34 @@ export class SeoOptimizerService {
    * 설명 최적화
    *
    * 자연스러운 뉴스 채널 스타일의 설명을 생성합니다.
-   * 앵커와 리포터 대본을 기반으로 완전한 요약을 작성하고,
+   * Gemini AI로 생성한 실제 뉴스 요약을 사용하고,
    * 키워드 해시태그를 추가하여 검색 최적화를 강화합니다.
    *
    * 설명 구성:
    * 1. 날짜 정보 ("YYYY년 MM월 DD일 주요 뉴스입니다.")
-   * 2. 뉴스 완전 요약 (앵커 + 리포터 대본 조합, 300자 이내)
+   * 2. 뉴스 완전 요약 (Gemini AI 생성, 300자 이내)
    * 3. 구독/좋아요 안내
    * 4. 해시태그 (#뉴스 #속보 + 키워드 해시태그)
    *
-   * @param newsContent - 뉴스 본문 (현재 미사용)
-   * @param anchorScript - 앵커 대본
-   * @param reporterScript - 리포터 대본
+   * @param newsContent - 뉴스 본문
+   * @param anchorScript - 앵커 대본 (Gemini 실패 시 사용)
+   * @param reporterScript - 리포터 대본 (Gemini 실패 시 사용)
    * @param keywords - 추출된 키워드 배열
    * @returns 최적화된 설명
    *
    * @private
    */
-  private optimizeDescription(
+  private async optimizeDescription(
     newsContent: string,
     anchorScript: string,
     reporterScript: string,
     keywords: string[],
-  ): string {
+  ): Promise<string> {
     const now = new Date();
     const dateStr = `${now.getFullYear()}년 ${now.getMonth() + 1}월 ${now.getDate()}일`;
 
-    // 뉴스 내용 완전 요약 (말줄임표 없이)
-    const summary = this.createCompleteSummary(newsContent, anchorScript, reporterScript);
+    // 뉴스 내용 완전 요약 (Gemini AI로 생성)
+    const summary = await this.createCompleteSummary(newsContent, anchorScript, reporterScript);
 
     // 키워드 해시태그 생성 (최대 15개, 공백 제거)
     const keywordHashtags = keywords
@@ -344,73 +344,119 @@ ${summary}
   /**
    * 뉴스 내용의 완전한 요약 생성
    *
-   * 앵커와 리포터 대본을 조합하여 말줄임표 없이 완전한 요약을 생성합니다.
-   * 문장 단위로 잘라서 자연스러운 마침을 보장합니다.
+   * Gemini AI를 사용하여 실제 뉴스 내용을 요약합니다.
+   * 앵커/리포터 스크립트를 그대로 사용하지 않고, 뉴스 본문을 기반으로 새로운 요약을 생성합니다.
    *
    * 요약 생성 과정:
-   * 1. 앵커 대본과 리포터 대본을 연결
-   * 2. 300자 이내로 제한
-   * 3. 문장 단위로 잘라서 자연스럽게 마침
-   * 4. 마지막 구두점(. ? !) 이후로 잘림
+   * 1. Gemini AI에게 뉴스 본문 전달
+   * 2. 300자 이내의 간결한 요약 요청
+   * 3. 핵심 정보만 포함 (육하원칙 기반)
+   * 4. 자연스러운 문장 마무리
    *
-   * @param newsContent - 뉴스 본문 (현재 미사용)
-   * @param anchorScript - 앵커 대본
-   * @param reporterScript - 리포터 대본
+   * @param newsContent - 뉴스 본문
+   * @param anchorScript - 앵커 대본 (참고용, Gemini 실패 시 사용)
+   * @param reporterScript - 리포터 대본 (참고용, Gemini 실패 시 사용)
    * @returns 완전한 요약 (300자 이내)
    *
    * @private
    */
-  private createCompleteSummary(
+  private async createCompleteSummary(
     newsContent: string,
     anchorScript: string,
     reporterScript: string,
-  ): string {
-    // 앵커 대본에서 핵심 내용 추출
-    const anchorSummary = anchorScript
-      .split('\n')
-      .filter(line => line.trim().length > 0)
-      .join(' ')
-      .trim();
+  ): Promise<string> {
+    try {
+      const prompt = `다음 뉴스 기사를 300자 이내로 간결하게 요약해주세요.
+육하원칙(누가, 언제, 어디서, 무엇을, 어떻게, 왜)을 기반으로 핵심 정보만 포함해주세요.
+뉴스 스크립트가 아닌 실제 기사 내용을 요약해야 합니다.
 
-    // 리포터 대본에서 핵심 내용 추출
-    const reporterSummary = reporterScript
-      .split('\n')
-      .filter(line => line.trim().length > 0)
-      .join(' ')
-      .trim();
+뉴스 기사:
+${newsContent}
 
-    // 앵커 + 리포터 대본을 조합하여 완전한 요약 생성
-    const fullSummary = `${anchorSummary} ${reporterSummary}`.trim();
+요구사항:
+- 300자 이내로 작성
+- 완전한 문장으로 마무리 (말줄임표 사용 금지)
+- 핵심 정보만 포함
+- 자연스러운 뉴스 요약 스타일
 
-    // 300자 이내로 정리 (말줄임표 없이 문장 단위로 자르기)
-    if (fullSummary.length <= 300) {
-      return fullSummary;
+순수 텍스트로만 응답하세요 (JSON이나 마크다운 형식 사용 금지).`;
+
+      // Gemini AI 호출
+      const result = await this.model.generateContent(prompt);
+      const summary = result.response.text().trim();
+
+      this.logger.debug(`Generated summary: ${summary.substring(0, 100)}...`);
+
+      // 300자 제한 확인 (혹시 모를 경우 대비)
+      if (summary.length <= 300) {
+        return summary;
+      }
+
+      // 300자 초과 시 문장 단위로 자르기
+      const sentences = summary.split(/([.?!])\s+/);
+      let truncated = '';
+      let i = 0;
+
+      while (i < sentences.length && (truncated + sentences[i]).length <= 300) {
+        truncated += sentences[i];
+        i++;
+      }
+
+      const lastPunctuationIndex = Math.max(
+        truncated.lastIndexOf('.'),
+        truncated.lastIndexOf('?'),
+        truncated.lastIndexOf('!'),
+      );
+
+      if (lastPunctuationIndex > 0) {
+        return truncated.substring(0, lastPunctuationIndex + 1).trim();
+      }
+
+      return truncated.trim();
+    } catch (error) {
+      this.logger.error('Failed to generate summary with Gemini:', error.message);
+
+      // Gemini 실패 시 앵커+리포터 대본으로 대체
+      const anchorSummary = anchorScript
+        .split('\n')
+        .filter(line => line.trim().length > 0)
+        .join(' ')
+        .trim();
+
+      const reporterSummary = reporterScript
+        .split('\n')
+        .filter(line => line.trim().length > 0)
+        .join(' ')
+        .trim();
+
+      const fallbackSummary = `${anchorSummary} ${reporterSummary}`.trim();
+
+      if (fallbackSummary.length <= 300) {
+        return fallbackSummary;
+      }
+
+      // 문장 단위로 자르기
+      const sentences = fallbackSummary.split(/([.?!])\s+/);
+      let summary = '';
+      let i = 0;
+
+      while (i < sentences.length && (summary + sentences[i]).length <= 300) {
+        summary += sentences[i];
+        i++;
+      }
+
+      const lastPunctuationIndex = Math.max(
+        summary.lastIndexOf('.'),
+        summary.lastIndexOf('?'),
+        summary.lastIndexOf('!'),
+      );
+
+      if (lastPunctuationIndex > 0) {
+        return summary.substring(0, lastPunctuationIndex + 1).trim();
+      }
+
+      return summary.trim();
     }
-
-    // 문장 단위로 분리 (마침표, 물음표, 느낌표 기준)
-    const sentences = fullSummary.split(/([.?!])\s+/);
-    let summary = '';
-    let i = 0;
-
-    // 300자 이내에서 최대한 많은 문장 포함
-    while (i < sentences.length && (summary + sentences[i]).length <= 300) {
-      summary += sentences[i];
-      i++;
-    }
-
-    // 마지막 문장이 완전하지 않으면 제거
-    const lastPunctuationIndex = Math.max(
-      summary.lastIndexOf('.'),
-      summary.lastIndexOf('?'),
-      summary.lastIndexOf('!'),
-    );
-
-    if (lastPunctuationIndex > 0) {
-      return summary.substring(0, lastPunctuationIndex + 1).trim();
-    }
-
-    // 구두점이 없으면 그대로 반환
-    return summary.trim();
   }
 
   /**
