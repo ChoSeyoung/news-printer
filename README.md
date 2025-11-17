@@ -6,10 +6,20 @@
 
 ## ✨ 주요 기능
 
+### 📰 다중 언론사 RSS 통합 (균형 구성)
+- **조선일보** - 보수 성향, 종합 일간지
+- **연합뉴스** - 중도 성향, 통신사 (속보성 강함)
+- **한겨레** - 진보 성향, 종합 일간지
+- **KBS 뉴스** - 중립 성향, 공영방송
+- **한국경제** - 경제 전문지
+- **중복 제거**: 제목 유사도 기반 자동 중복 뉴스 필터링
+- **출처 표시**: 각 뉴스에 언론사 정보 및 정치 성향 표시
+
 ### 🤖 AI 기반 콘텐츠 생성
 - **Google Gemini AI**: 뉴스 기사를 분석하여 자연스러운 앵커/리포터 스크립트 자동 생성
 - **Google Cloud TTS (Chirp3-HD)**: 고품질 한국어 음성 합성으로 자연스러운 발음 구현
 - **AI 썸네일 선택**: Gemini AI가 뉴스에 가장 적합한 배경 이미지 자동 선택
+- **AI 뉴스 요약**: 실제 기사 내용 기반 300자 이내 요약 자동 생성
 
 ### 🎨 영상 제작
 - **RSS 이미지 우선 사용**: 뉴스 기사에서 추출한 이미지를 배경으로 우선 사용
@@ -162,8 +172,15 @@ GET /news?limit=10&category=politics&fullContent=true
       "title": "뉴스 제목",
       "link": "https://www.chosun.com/...",
       "description": "뉴스 요약",
-      "pubDate": "2025-11-16T10:30:00Z",
+      "pubDate": "2025-11-17T10:30:00Z",
       "category": "politics",
+      "guid": "unique-id",
+      "source": {
+        "id": "chosun",
+        "name": "조선일보",
+        "politicalStance": "conservative",
+        "type": "general"
+      },
       "fullContent": "전체 기사 내용...",
       "anchor": "앵커 스크립트...",
       "reporter": "리포터 스크립트...",
@@ -172,8 +189,8 @@ GET /news?limit=10&category=politics&fullContent=true
   ],
   "meta": {
     "total": 10,
-    "source": "chosun.com",
-    "fetchedAt": "2025-11-16T11:00:00Z",
+    "sources": ["조선일보", "연합뉴스", "한겨레", "KBS 뉴스", "한국경제"],
+    "fetchedAt": "2025-11-17T11:00:00Z",
     "category": "politics",
     "includesFullContent": true
   }

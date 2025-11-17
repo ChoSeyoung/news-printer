@@ -1,18 +1,27 @@
 import { Injectable, Logger, HttpException, HttpStatus } from '@nestjs/common';
 import axios, { AxiosError } from 'axios';
 import { parseStringPromise } from 'xml2js';
-import { NewsItemDto } from './dto/news-item.dto';
+import { NewsItemDto, NewsSourceInfo } from './dto/news-item.dto';
 import { RssFeed, RssItem } from './interfaces/rss-feed.interface';
 import { ArticleScraperService } from './services/article-scraper.service';
 import { GeminiService } from './services/gemini.service';
+import { getEnabledNewsSources, getCategorySupportingSources } from './config/news-sources.config';
 
 /**
  * 뉴스 서비스
  *
- * 조선일보 RSS 피드에서 뉴스를 가져오고, 필요시 전체 기사 내용과 AI 스크립트를 생성합니다.
+ * 다중 언론사 RSS 피드에서 뉴스를 가져오고, 필요시 전체 기사 내용과 AI 스크립트를 생성합니다.
+ *
+ * 지원 언론사 (균형 구성):
+ * 1. 조선일보 - 보수 성향, 종합 일간지
+ * 2. 연합뉴스 - 중도 성향, 통신사 (속보성)
+ * 3. 한겨레 - 진보 성향, 종합 일간지
+ * 4. KBS 뉴스 - 중립 성향, 공영방송
+ * 5. 한국경제 - 경제 전문지
  *
  * 주요 기능:
- * - RSS 피드 파싱 및 뉴스 아이템 추출
+ * - 다중 언론사 RSS 피드 파싱 및 통합
+ * - 중복 뉴스 제거 (제목 유사도 기반)
  * - 전체 기사 내용 스크래핑
  * - Gemini AI를 통한 앵커/리포터 스크립트 생성
  * - KST 시간대 처리 및 오늘 날짜 필터링
@@ -20,9 +29,6 @@ import { GeminiService } from './services/gemini.service';
 @Injectable()
 export class NewsService {
   private readonly logger = new Logger(NewsService.name);
-
-  /** 조선일보 RSS 피드 기본 URL */
-  private readonly baseUrl = 'https://www.chosun.com/arc/outboundfeeds/rss/category';
 
   /** HTTP 요청 타임아웃 (밀리초) */
   private readonly timeout = 10000;
@@ -33,18 +39,19 @@ export class NewsService {
   ) {}
 
   /**
-   * RSS 피드에서 뉴스를 가져옵니다
+   * 다중 언론사 RSS 피드에서 뉴스를 가져옵니다
    *
    * @param category - 뉴스 카테고리 (politics, economy, society 등)
    * @param limit - 가져올 뉴스 개수 (기본값: 10)
    * @param includeFullContent - 전체 기사 내용 및 AI 스크립트 포함 여부 (기본값: false)
-   * @returns 뉴스 아이템 배열
+   * @returns 뉴스 아이템 배열 (중복 제거 및 정렬됨)
    *
    * 처리 과정:
-   * 1. RSS 피드 URL 생성 및 HTTP 요청
-   * 2. XML 데이터를 JSON으로 파싱
-   * 3. 뉴스 아이템 추출 및 오늘 날짜 필터링
-   * 4. includeFullContent가 true인 경우:
+   * 1. 모든 활성화된 언론사에서 RSS 피드 가져오기 (병렬)
+   * 2. 뉴스 아이템 추출 및 오늘 날짜 필터링
+   * 3. 중복 제거 (제목 유사도 기반)
+   * 4. 발행 시간순 정렬 (최신순)
+   * 5. includeFullContent가 true인 경우:
    *    - 기사 전체 내용 스크래핑
    *    - Gemini AI로 앵커/리포터 스크립트 생성
    */
@@ -53,27 +60,34 @@ export class NewsService {
     limit: number = 10,
     includeFullContent: boolean = false,
   ): Promise<NewsItemDto[]> {
-    const rssUrl = `${this.baseUrl}/${category}/?outputType=xml`;
-
-    this.logger.log(`Fetching RSS feed from: ${rssUrl}`);
+    this.logger.log(`Fetching news from multiple sources (category: ${category}, limit: ${limit})`);
 
     try {
-      // RSS 피드 다운로드
-      const response = await axios.get(rssUrl, {
-        timeout: this.timeout,
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (compatible; NewsBot/1.0)',
-        },
-      });
+      // 활성화된 모든 언론사에서 뉴스 가져오기 (병렬)
+      const newsSources = getEnabledNewsSources();
+      const newsPromises = newsSources.map((source) =>
+        this.fetchNewsFromSource(source.id, category).catch((error) => {
+          this.logger.warn(`Failed to fetch news from ${source.name}: ${error.message}`);
+          return []; // 실패한 언론사는 빈 배열 반환
+        })
+      );
 
-      // XML을 JSON으로 파싱
-      const parsedData = await this.parseXmlToJson(response.data);
+      const newsArrays = await Promise.all(newsPromises);
 
-      // 뉴스 아이템 추출 (오늘 날짜 필터링 포함)
-      const newsItems = this.extractNewsItems(parsedData, category);
+      // 모든 뉴스를 하나의 배열로 합치기
+      const allNews = newsArrays.flat();
+
+      this.logger.log(`Fetched ${allNews.length} news items from ${newsSources.length} sources`);
+
+      // 중복 제거
+      const uniqueNews = this.removeDuplicates(allNews);
+      this.logger.log(`After removing duplicates: ${uniqueNews.length} unique news items`);
+
+      // 발행 시간순 정렬 (최신순)
+      uniqueNews.sort((a, b) => new Date(b.pubDate).getTime() - new Date(a.pubDate).getTime());
 
       // 요청한 개수만큼만 반환
-      const limitedItems = newsItems.slice(0, limit);
+      const limitedItems = uniqueNews.slice(0, limit);
 
       // 전체 기사 내용 및 AI 스크립트 생성 (선택적)
       if (includeFullContent) {
@@ -105,7 +119,64 @@ export class NewsService {
 
       return limitedItems;
     } catch (error) {
-      this.handleError(error, rssUrl);
+      this.logger.error('Failed to fetch news from multiple sources:', error);
+      throw new HttpException(
+        'Failed to fetch news',
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
+  /**
+   * 특정 언론사에서 뉴스를 가져옵니다
+   *
+   * @param sourceId - 언론사 ID (chosun, yonhap, hani, kbs, hankyung)
+   * @param category - 뉴스 카테고리
+   * @returns 뉴스 아이템 배열
+   *
+   * @private
+   */
+  private async fetchNewsFromSource(
+    sourceId: string,
+    category: string,
+  ): Promise<NewsItemDto[]> {
+    const source = getEnabledNewsSources().find((s) => s.id === sourceId);
+
+    if (!source) {
+      throw new Error(`News source not found: ${sourceId}`);
+    }
+
+    // RSS URL 생성
+    let rssUrl = source.rssUrl;
+
+    // 조선일보는 카테고리별 RSS 지원
+    if (source.id === 'chosun' && source.supportCategories) {
+      rssUrl = `${source.rssUrl}/${category}/?outputType=xml`;
+    }
+
+    this.logger.debug(`Fetching RSS from ${source.name}: ${rssUrl}`);
+
+    try {
+      // RSS 피드 다운로드
+      const response = await axios.get(rssUrl, {
+        timeout: this.timeout,
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (compatible; NewsBot/1.0)',
+        },
+      });
+
+      // XML을 JSON으로 파싱
+      const parsedData = await this.parseXmlToJson(response.data);
+
+      // 뉴스 아이템 추출
+      const newsItems = this.extractNewsItems(parsedData, source, category);
+
+      this.logger.debug(`Fetched ${newsItems.length} items from ${source.name}`);
+
+      return newsItems;
+    } catch (error) {
+      this.logger.error(`Failed to fetch from ${source.name}:`, error.message);
+      throw error;
     }
   }
 
@@ -143,6 +214,7 @@ export class NewsService {
    * RSS 피드에서 뉴스 아이템을 추출하고 필터링합니다
    *
    * @param rssFeed - 파싱된 RSS 피드 객체
+   * @param source - 언론사 정보
    * @param category - 뉴스 카테고리
    * @returns 필터링된 뉴스 아이템 배열
    *
@@ -150,15 +222,19 @@ export class NewsService {
    * - title과 link가 있는 아이템만 포함
    * - 오늘(KST 기준) 발행된 뉴스만 포함
    */
-  private extractNewsItems(rssFeed: RssFeed, category: string): NewsItemDto[] {
+  private extractNewsItems(
+    rssFeed: RssFeed,
+    source: any,
+    category: string,
+  ): NewsItemDto[] {
     try {
       const channel = rssFeed.rss.channel;
 
-      // item이 배열인지 단일 객체인지 확인 (RSS 피드 구조에 따라 다름)
+      // item이 배열인지 단일 객체인지 확인
       const items = Array.isArray(channel.item) ? channel.item : [channel.item];
 
       if (!items || items.length === 0) {
-        this.logger.warn('No items found in RSS feed');
+        this.logger.warn(`No items found in RSS feed from ${source.name}`);
         return [];
       }
 
@@ -167,14 +243,11 @@ export class NewsService {
 
       return items
         .filter((item) => item && item.title && item.link) // 필수 필드 검증
-        .map((item: RssItem) => this.mapToNewsItemDto(item, category)) // DTO 변환
+        .map((item: RssItem) => this.mapToNewsItemDto(item, source, category)) // DTO 변환
         .filter((newsItem) => this.isTodayKST(newsItem.pubDate, todayKST)); // 오늘 날짜 필터링
     } catch (error) {
-      this.logger.error('Failed to extract news items', error);
-      throw new HttpException(
-        'Failed to extract news items',
-        HttpStatus.INTERNAL_SERVER_ERROR,
-      );
+      this.logger.error(`Failed to extract news items from ${source.name}`, error);
+      return [];
     }
   }
 
@@ -182,12 +255,21 @@ export class NewsService {
    * RSS 아이템을 NewsItemDto로 변환합니다
    *
    * @param item - RSS 아이템
+   * @param source - 언론사 정보
    * @param category - 뉴스 카테고리
    * @returns NewsItemDto 객체
    */
-  private mapToNewsItemDto(item: RssItem, category: string): NewsItemDto {
+  private mapToNewsItemDto(item: RssItem, source: any, category: string): NewsItemDto {
     // UTC를 KST로 변환
     const pubDateKST = this.convertUTCtoKST(item.pubDate);
+
+    // 언론사 정보 생성
+    const sourceInfo: NewsSourceInfo = {
+      id: source.id,
+      name: source.name,
+      politicalStance: source.politicalStance,
+      type: source.type,
+    };
 
     return {
       title: this.cleanText(item.title),
@@ -196,7 +278,42 @@ export class NewsService {
       pubDate: pubDateKST,
       category: category,
       guid: item.guid || item.link,
+      source: sourceInfo,
     };
+  }
+
+  /**
+   * 중복 뉴스를 제거합니다
+   *
+   * 제목 유사도를 기반으로 중복을 판단합니다.
+   * 같은 뉴스를 여러 언론사에서 다룰 경우, 첫 번째 것만 유지합니다.
+   *
+   * @param newsItems - 뉴스 아이템 배열
+   * @returns 중복 제거된 뉴스 아이템 배열
+   *
+   * @private
+   */
+  private removeDuplicates(newsItems: NewsItemDto[]): NewsItemDto[] {
+    const uniqueNews: NewsItemDto[] = [];
+    const seenTitles = new Set<string>();
+
+    for (const item of newsItems) {
+      // 제목 정규화 (공백 제거, 소문자 변환)
+      const normalizedTitle = item.title
+        .replace(/\s+/g, '')
+        .toLowerCase()
+        .substring(0, 30); // 처음 30자만 비교
+
+      // 이미 본 제목이 아니면 추가
+      if (!seenTitles.has(normalizedTitle)) {
+        seenTitles.add(normalizedTitle);
+        uniqueNews.push(item);
+      } else {
+        this.logger.debug(`Duplicate news removed: ${item.title} (${item.source.name})`);
+      }
+    }
+
+    return uniqueNews;
   }
 
   /**
@@ -254,7 +371,6 @@ export class NewsService {
   private isTodayKST(dateString: string, todayKST: Date): boolean {
     try {
       const date = new Date(dateString);
-      const kstOffset = 9 * 60;
       const dateKST = new Date(date.getTime());
 
       // 내일 자정 계산
@@ -288,60 +404,5 @@ export class NewsService {
       .replace(/&gt;/g, '>')        // > 엔티티 변환
       .replace(/&quot;/g, '"')      // " 엔티티 변환
       .trim();                       // 앞뒤 공백 제거
-  }
-
-  /**
-   * HTTP 요청 에러를 처리하고 적절한 예외를 발생시킵니다
-   *
-   * @param error - 에러 객체
-   * @param url - 요청 URL
-   * @throws HttpException - 에러 유형에 따른 적절한 HTTP 예외
-   *
-   * 에러 유형별 처리:
-   * - ECONNABORTED: 요청 타임아웃 (408)
-   * - HTTP 응답 에러: Bad Gateway (502)
-   * - 네트워크 에러: Service Unavailable (503)
-   * - 기타: Internal Server Error (500)
-   */
-  private handleError(error: unknown, url: string): never {
-    if (axios.isAxiosError(error)) {
-      const axiosError = error as AxiosError;
-
-      // 타임아웃 에러
-      if (axiosError.code === 'ECONNABORTED') {
-        this.logger.error(`Request timeout for URL: ${url}`);
-        throw new HttpException(
-          'Request timeout - RSS feed took too long to respond',
-          HttpStatus.REQUEST_TIMEOUT,
-        );
-      }
-
-      // HTTP 응답 에러 (서버가 응답했지만 에러 상태 코드 반환)
-      if (axiosError.response) {
-        this.logger.error(
-          `HTTP error ${axiosError.response.status} for URL: ${url}`,
-        );
-        throw new HttpException(
-          `RSS feed returned error: ${axiosError.response.status}`,
-          HttpStatus.BAD_GATEWAY,
-        );
-      }
-
-      // 네트워크 에러 (요청이 전송되지 않음)
-      if (axiosError.request) {
-        this.logger.error(`Network error for URL: ${url}`);
-        throw new HttpException(
-          'Network error - could not reach RSS feed',
-          HttpStatus.SERVICE_UNAVAILABLE,
-        );
-      }
-    }
-
-    // 기타 예상치 못한 에러
-    this.logger.error(`Unexpected error fetching RSS: ${error}`);
-    throw new HttpException(
-      'Failed to fetch news',
-      HttpStatus.INTERNAL_SERVER_ERROR,
-    );
   }
 }
