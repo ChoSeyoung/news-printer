@@ -1,0 +1,248 @@
+{
+  "categories": {
+    "politics": {
+      "name": "정치",
+      "thumbnail": {
+        "textEmphasis": "highlight",
+        "highlightColor": "#FF0000",
+        "keywords": ["긴급", "속보", "발표", "정책"],
+        "faceDetectionPriority": 0.8
+      },
+      "videoStyle": {
+        "pacing": "moderate",
+        "musicIntensity": "low",
+        "visualEffects": "minimal"
+      },
+      "scriptOptimization": {
+        "hookStyle": "factual",
+        "hookKeywords": ["발표했습니다", "밝혀졌습니다", "결정되었습니다"],
+        "toneStyle": "formal",
+        "emphasizeWords": ["정부", "국회", "대통령", "법안", "정책"]
+      },
+      "seoKeywords": ["정치", "정부", "국회", "정책", "법안", "대통령"],
+      "targetAudience": {
+        "ageGroup": "30-60",
+        "interests": ["정치", "시사", "정책"]
+      }
+    },
+    "economy": {
+      "name": "경제",
+      "thumbnail": {
+        "textEmphasis": "shadow",
+        "highlightColor": "#0066CC",
+        "keywords": ["상승", "하락", "급등", "급락"],
+        "faceDetectionPriority": 0.5
+      },
+      "videoStyle": {
+        "pacing": "fast",
+        "musicIntensity": "medium",
+        "visualEffects": "charts"
+      },
+      "scriptOptimization": {
+        "hookStyle": "numeric",
+        "hookKeywords": ["% 상승", "% 하락", "억원", "조원"],
+        "toneStyle": "analytical",
+        "emphasizeWords": ["주가", "환율", "금리", "부동산", "경제성장률"]
+      },
+      "seoKeywords": ["경제", "주식", "부동산", "금리", "환율", "증시"],
+      "targetAudience": {
+        "ageGroup": "25-55",
+        "interests": ["투자", "재테크", "경제"]
+      }
+    },
+    "technology": {
+      "name": "기술/IT",
+      "thumbnail": {
+        "textEmphasis": "all",
+        "highlightColor": "#00FF00",
+        "keywords": ["혁신", "최초", "신기술", "출시"],
+        "faceDetectionPriority": 0.6
+      },
+      "videoStyle": {
+        "pacing": "fast",
+        "musicIntensity": "high",
+        "visualEffects": "dynamic"
+      },
+      "scriptOptimization": {
+        "hookStyle": "innovative",
+        "hookKeywords": ["혁신적인", "최초로", "세계 최초", "획기적인"],
+        "toneStyle": "enthusiastic",
+        "emphasizeWords": ["AI", "기술", "혁신", "스마트폰", "자율주행"]
+      },
+      "seoKeywords": ["기술", "IT", "AI", "스마트폰", "혁신", "테크"],
+      "targetAudience": {
+        "ageGroup": "18-40",
+        "interests": ["기술", "IT", "가젯", "혁신"]
+      }
+    },
+    "entertainment": {
+      "name": "연예/문화",
+      "thumbnail": {
+        "textEmphasis": "underline",
+        "highlightColor": "#FF69B4",
+        "keywords": ["화제", "인기", "대박", "핫"],
+        "faceDetectionPriority": 0.9
+      },
+      "videoStyle": {
+        "pacing": "very-fast",
+        "musicIntensity": "high",
+        "visualEffects": "flashy"
+      },
+      "scriptOptimization": {
+        "hookStyle": "sensational",
+        "hookKeywords": ["화제의", "대박", "인기 폭발", "놀라운"],
+        "toneStyle": "casual",
+        "emphasizeWords": ["스타", "연예인", "아이돌", "드라마", "영화"]
+      },
+      "seoKeywords": ["연예", "연예인", "드라마", "영화", "아이돌", "K-pop"],
+      "targetAudience": {
+        "ageGroup": "15-35",
+        "interests": ["연예", "K-pop", "드라마", "영화"]
+      }
+    },
+    "sports": {
+      "name": "스포츠",
+      "thumbnail": {
+        "textEmphasis": "shadow",
+        "highlightColor": "#FFA500",
+        "keywords": ["승리", "우승", "기록", "역전"],
+        "faceDetectionPriority": 0.7
+      },
+      "videoStyle": {
+        "pacing": "very-fast",
+        "musicIntensity": "high",
+        "visualEffects": "action"
+      },
+      "scriptOptimization": {
+        "hookStyle": "exciting",
+        "hookKeywords": ["승리했습니다", "우승", "신기록", "역전"],
+        "toneStyle": "energetic",
+        "emphasizeWords": ["승리", "골", "홈런", "우승", "기록", "선수"]
+      },
+      "seoKeywords": ["스포츠", "축구", "야구", "승리", "우승", "경기"],
+      "targetAudience": {
+        "ageGroup": "20-50",
+        "interests": ["스포츠", "축구", "야구", "운동"]
+      }
+    },
+    "society": {
+      "name": "사회",
+      "thumbnail": {
+        "textEmphasis": "highlight",
+        "highlightColor": "#FF4500",
+        "keywords": ["사건", "사고", "긴급", "주의"],
+        "faceDetectionPriority": 0.6
+      },
+      "videoStyle": {
+        "pacing": "moderate",
+        "musicIntensity": "low",
+        "visualEffects": "minimal"
+      },
+      "scriptOptimization": {
+        "hookStyle": "urgent",
+        "hookKeywords": ["발생했습니다", "주의가 필요합니다", "긴급"],
+        "toneStyle": "serious",
+        "emphasizeWords": ["사건", "사고", "피해", "안전", "주의"]
+      },
+      "seoKeywords": ["사회", "사건", "사고", "안전", "재난", "긴급"],
+      "targetAudience": {
+        "ageGroup": "25-65",
+        "interests": ["사회", "안전", "시사"]
+      }
+    },
+    "health": {
+      "name": "건강/의학",
+      "thumbnail": {
+        "textEmphasis": "all",
+        "highlightColor": "#32CD32",
+        "keywords": ["건강", "치료", "예방", "효과"],
+        "faceDetectionPriority": 0.7
+      },
+      "videoStyle": {
+        "pacing": "moderate",
+        "musicIntensity": "low",
+        "visualEffects": "clean"
+      },
+      "scriptOptimization": {
+        "hookStyle": "informative",
+        "hookKeywords": ["밝혀졌습니다", "효과가 있습니다", "예방할 수 있습니다"],
+        "toneStyle": "informative",
+        "emphasizeWords": ["건강", "질병", "치료", "예방", "백신", "의학"]
+      },
+      "seoKeywords": ["건강", "의학", "질병", "치료", "예방", "백신"],
+      "targetAudience": {
+        "ageGroup": "30-70",
+        "interests": ["건강", "의학", "웰빙"]
+      }
+    },
+    "international": {
+      "name": "국제",
+      "thumbnail": {
+        "textEmphasis": "shadow",
+        "highlightColor": "#4169E1",
+        "keywords": ["해외", "국제", "글로벌", "세계"],
+        "faceDetectionPriority": 0.6
+      },
+      "videoStyle": {
+        "pacing": "moderate",
+        "musicIntensity": "medium",
+        "visualEffects": "maps"
+      },
+      "scriptOptimization": {
+        "hookStyle": "global",
+        "hookKeywords": ["세계적으로", "국제사회가", "글로벌", "해외에서"],
+        "toneStyle": "formal",
+        "emphasizeWords": ["국제", "해외", "미국", "중국", "유럽", "세계"]
+      },
+      "seoKeywords": ["국제", "해외", "글로벌", "세계", "미국", "중국"],
+      "targetAudience": {
+        "ageGroup": "25-60",
+        "interests": ["국제", "세계정세", "외교"]
+      }
+    },
+    "default": {
+      "name": "일반",
+      "thumbnail": {
+        "textEmphasis": "shadow",
+        "highlightColor": "#808080",
+        "keywords": ["뉴스", "소식", "전달", "정보"],
+        "faceDetectionPriority": 0.6
+      },
+      "videoStyle": {
+        "pacing": "moderate",
+        "musicIntensity": "medium",
+        "visualEffects": "standard"
+      },
+      "scriptOptimization": {
+        "hookStyle": "balanced",
+        "hookKeywords": ["전해드립니다", "소식입니다", "알려드립니다"],
+        "toneStyle": "neutral",
+        "emphasizeWords": ["뉴스", "소식", "정보", "오늘"]
+      },
+      "seoKeywords": ["뉴스", "소식", "정보", "오늘의뉴스"],
+      "targetAudience": {
+        "ageGroup": "20-60",
+        "interests": ["뉴스", "시사", "정보"]
+      }
+    }
+  },
+  "optimizationRules": {
+    "thumbnailTextMaxLength": 15,
+    "thumbnailFontSizeMin": 48,
+    "thumbnailFontSizeMax": 72,
+    "videoLengthOptimal": {
+      "min": 60,
+      "max": 120,
+      "ideal": 90
+    },
+    "hookDurationSeconds": 5,
+    "seoKeywordsMax": 10,
+    "titleMaxLength": 100,
+    "descriptionMaxLength": 5000
+  },
+  "performanceTargets": {
+    "ctrMinimum": 0.05,
+    "avgViewDurationMinimum": 0.5,
+    "viewsPerDayMinimum": 100
+  }
+}

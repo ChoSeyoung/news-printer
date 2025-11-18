@@ -1,12 +1,16 @@
-import { Controller, Post, Body, HttpException, HttpStatus, Logger } from '@nestjs/common';
+import { Controller, Post, Get, Body, Param, Query, HttpException, HttpStatus, Logger } from '@nestjs/common';
 import { MediaPipelineService } from './services/media-pipeline.service';
+import { AnalyticsService } from './services/analytics.service';
 import { PublishNewsDto, PublishNewsResponseDto } from './dto/publish-news.dto';
 
 @Controller('media')
 export class MediaController {
   private readonly logger = new Logger(MediaController.name);
 
-  constructor(private readonly mediaPipeline: MediaPipelineService) {}
+  constructor(
+    private readonly mediaPipeline: MediaPipelineService,
+    private readonly analyticsService: AnalyticsService,
+  ) {}
 
   @Post('publish')
   async publishNews(@Body() dto: PublishNewsDto): Promise<PublishNewsResponseDto> {
@@ -47,6 +51,119 @@ export class MediaController {
 
       throw new HttpException(
         `Failed to publish news: ${error.message}`,
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
+  /**
+   * 영상 메트릭 조회
+   *
+   * @param videoId - YouTube 영상 ID
+   * @returns 영상 성과 메트릭
+   */
+  @Get('analytics/:videoId/metrics')
+  async getVideoMetrics(@Param('videoId') videoId: string) {
+    try {
+      this.logger.log(`Fetching metrics for video: ${videoId}`);
+      const metrics = await this.analyticsService.getVideoMetrics(videoId);
+      return {
+        success: true,
+        data: metrics,
+      };
+    } catch (error) {
+      this.logger.error(`Failed to get metrics for ${videoId}:`, error.message);
+      throw new HttpException(
+        `Failed to get video metrics: ${error.message}`,
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
+  /**
+   * 검색 유입 키워드 조회
+   *
+   * @param videoId - YouTube 영상 ID
+   * @param limit - 최대 결과 개수 (기본: 25)
+   * @returns 검색 키워드 배열
+   */
+  @Get('analytics/:videoId/keywords')
+  async getSearchKeywords(
+    @Param('videoId') videoId: string,
+    @Query('limit') limit?: number,
+  ) {
+    try {
+      this.logger.log(`Fetching search keywords for video: ${videoId}`);
+      const keywords = await this.analyticsService.getSearchTerms(
+        videoId,
+        limit ? Number(limit) : 25,
+      );
+      return {
+        success: true,
+        data: keywords,
+        total: keywords.length,
+      };
+    } catch (error) {
+      this.logger.error(`Failed to get search keywords for ${videoId}:`, error.message);
+      throw new HttpException(
+        `Failed to get search keywords: ${error.message}`,
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
+  /**
+   * 종합 분석 리포트 생성
+   *
+   * @param videoId - YouTube 영상 ID
+   * @returns 종합 분석 리포트
+   */
+  @Get('analytics/:videoId/report')
+  async generateAnalyticsReport(@Param('videoId') videoId: string) {
+    try {
+      this.logger.log(`Generating analytics report for video: ${videoId}`);
+      const report = await this.analyticsService.generateAnalyticsReport(videoId);
+      return {
+        success: true,
+        data: report,
+        message: `Report saved to analytics/report_${videoId}_${new Date().toISOString().split('T')[0]}.json`,
+      };
+    } catch (error) {
+      this.logger.error(`Failed to generate report for ${videoId}:`, error.message);
+      throw new HttpException(
+        `Failed to generate analytics report: ${error.message}`,
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
+  /**
+   * 고성과 영상 조회
+   *
+   * @param threshold - 성과 기준 배수 (기본: 1.5)
+   * @param limit - 최대 결과 개수 (기본: 10)
+   * @returns 고성과 영상 배열
+   */
+  @Get('analytics/high-performers')
+  async getHighPerformers(
+    @Query('threshold') threshold?: number,
+    @Query('limit') limit?: number,
+  ) {
+    try {
+      this.logger.log('Fetching high-performing videos');
+      const videos = await this.analyticsService.getHighPerformingVideos(
+        threshold ? Number(threshold) : 1.5,
+        limit ? Number(limit) : 10,
+      );
+      return {
+        success: true,
+        data: videos,
+        total: videos.length,
+      };
+    } catch (error) {
+      this.logger.error('Failed to get high-performing videos:', error.message);
+      throw new HttpException(
+        `Failed to get high-performing videos: ${error.message}`,
         HttpStatus.INTERNAL_SERVER_ERROR,
       );
     }
