@@ -1,5 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import axios from 'axios';
+import * as https from 'https';
+import * as crypto from 'crypto';
 import * as fs from 'fs-extra';
 import * as path from 'path';
 
@@ -48,9 +50,15 @@ export class ImageSearchService {
    */
   private async downloadImage(imageUrl: string, index?: number): Promise<string> {
     try {
+      // HTTPS Agent with legacy SSL renegotiation support for yna.co.kr
+      const httpsAgent = new https.Agent({
+        secureOptions: crypto.constants.SSL_OP_LEGACY_SERVER_CONNECT,
+      });
+
       const response = await axios.get(imageUrl, {
         responseType: 'arraybuffer',
         timeout: 30000,
+        httpsAgent,
       });
 
       // Extract file extension from URL, default to .jpg if not found

@@ -15,6 +15,30 @@ export interface TtsOptions {
   voice?: 'MALE' | 'FEMALE';
   /** 말하기 속도 (1.0이 기본, 0.25~4.0 범위, 기본값: 1.15) */
   speakingRate?: number;
+  /** 타임포인트 추출 여부 (기본값: false) */
+  enableTimepoints?: boolean;
+}
+
+/**
+ * 자막 타이밍 정보
+ */
+export interface SubtitleTiming {
+  /** 자막 텍스트 */
+  text: string;
+  /** 시작 시간 (초) */
+  startTime: number;
+  /** 종료 시간 (초) */
+  endTime: number;
+}
+
+/**
+ * TTS 결과 (타임포인트 포함)
+ */
+export interface TtsResult {
+  /** 생성된 오디오 파일 경로 */
+  audioPath: string;
+  /** 자막 타이밍 정보 배열 */
+  subtitles?: SubtitleTiming[];
 }
 
 /**
@@ -98,8 +122,25 @@ export class TtsService {
    * ```
    */
   async generateSpeech(options: TtsOptions): Promise<string> {
+    const result = await this.generateSpeechWithTimings(options);
+    return result.audioPath;
+  }
+
+  /**
+   * 텍스트를 음성 파일로 변환 (타임포인트 포함)
+   *
+   * Google Cloud TTS API를 사용하여 한국어 텍스트를 WAV 형식의 음성 파일로 생성합니다.
+   * enableTimepoints가 true인 경우, 문장별 타이밍 정보도 함께 반환합니다.
+   *
+   * @param options - TTS 옵션 (텍스트, 음성 타입, 말하기 속도, 타임포인트 활성화)
+   * @returns 생성된 음성 파일 경로와 자막 타이밍 정보
+   */
+  async generateSpeechWithTimings(options: TtsOptions): Promise<TtsResult> {
     try {
       this.logger.debug(`Generating speech for text: ${options.text.substring(0, 50)}...`);
+
+      // 문장 단위로 분할
+      const sentences = this.splitIntoSentences(options.text);
 
       // Google Cloud TTS API 요청 구성
       const request: google.cloud.texttospeech.v1.ISynthesizeSpeechRequest = {
@@ -132,11 +173,93 @@ export class TtsService {
       await fs.writeFile(filepath, response.audioContent, 'binary');
 
       this.logger.debug(`Speech generated successfully: ${filepath}`);
-      return filepath;
+
+      // 자막 타이밍 계산 (문장 기반 추정)
+      let subtitles: SubtitleTiming[] | undefined;
+      if (options.enableTimepoints && sentences.length > 0) {
+        subtitles = await this.estimateSubtitleTimings(
+          sentences,
+          filepath,
+          options.speakingRate || 1.15
+        );
+      }
+
+      return {
+        audioPath: filepath,
+        subtitles,
+      };
     } catch (error) {
       this.logger.error('Failed to generate speech:', error.message);
       throw error;
     }
+  }
+
+  /**
+   * 텍스트를 문장 단위로 분할
+   */
+  private splitIntoSentences(text: string): string[] {
+    // 한국어 문장 구분 (마침표, 물음표, 느낌표 기준)
+    const sentences = text
+      .split(/(?<=[.!?。])\s*/)
+      .map(s => s.trim())
+      .filter(s => s.length > 0);
+
+    return sentences;
+  }
+
+  /**
+   * 문장별 자막 타이밍 추정
+   *
+   * 각 문장의 글자 수를 기반으로 시간을 추정합니다.
+   * 한국어 평균 발화 속도: 약 4-5음절/초
+   */
+  private async estimateSubtitleTimings(
+    sentences: string[],
+    audioPath: string,
+    speakingRate: number
+  ): Promise<SubtitleTiming[]> {
+    // 오디오 길이 가져오기
+    const totalDuration = await this.getAudioDuration(audioPath);
+
+    // 전체 글자 수 계산
+    const totalChars = sentences.reduce((sum, s) => sum + s.length, 0);
+
+    // 초당 글자 수 (발화 속도에 따라 조정)
+    const charsPerSecond = (totalChars / totalDuration);
+
+    const subtitles: SubtitleTiming[] = [];
+    let currentTime = 0;
+
+    for (const sentence of sentences) {
+      const duration = sentence.length / charsPerSecond;
+
+      subtitles.push({
+        text: sentence,
+        startTime: currentTime,
+        endTime: currentTime + duration,
+      });
+
+      currentTime += duration;
+    }
+
+    return subtitles;
+  }
+
+  /**
+   * 오디오 파일 길이 가져오기 (초 단위)
+   */
+  private async getAudioDuration(audioPath: string): Promise<number> {
+    return new Promise((resolve, reject) => {
+      const ffprobe = require('fluent-ffmpeg').ffprobe;
+      ffprobe(audioPath, (err: any, metadata: any) => {
+        if (err) {
+          reject(err);
+        } else {
+          const duration = metadata.format.duration || 0;
+          resolve(duration);
+        }
+      });
+    });
   }
 
   /**

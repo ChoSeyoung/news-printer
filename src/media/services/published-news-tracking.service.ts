@@ -15,11 +15,27 @@ export class PublishedNewsTrackingService {
   private readonly logger = new Logger(PublishedNewsTrackingService.name);
   private readonly trackingFilePath: string;
   private publishedNews: Map<string, PublishedNewsRecord>;
+  private publishedTitles: Set<string>; // 정규화된 제목 인덱스
 
   constructor() {
     this.trackingFilePath = path.join(process.cwd(), 'temp', 'published-news.json');
     this.publishedNews = new Map();
+    this.publishedTitles = new Set();
     this.loadPublishedNews();
+  }
+
+  /**
+   * 제목 정규화 (비교용)
+   * - 접두사 제거 ([속보], [단독] 등)
+   * - 특수문자 및 공백 정규화
+   * - 소문자 변환
+   */
+  private normalizeTitle(title: string): string {
+    return title
+      .replace(/^\[.*?\]\s*/g, '') // [속보], [단독] 등 접두사 제거
+      .replace(/[^\w가-힣]/g, '') // 특수문자 제거
+      .toLowerCase()
+      .trim();
   }
 
   /**
@@ -36,6 +52,10 @@ export class PublishedNewsTrackingService {
         if (Array.isArray(data)) {
           data.forEach((record: PublishedNewsRecord) => {
             this.publishedNews.set(record.url, record);
+            // 제목 인덱스에도 추가
+            if (record.title) {
+              this.publishedTitles.add(this.normalizeTitle(record.title));
+            }
           });
           this.logger.log(`Loaded ${this.publishedNews.size} published news records`);
         }
@@ -64,10 +84,25 @@ export class PublishedNewsTrackingService {
   /**
    * Check if a news article has already been published
    * @param url - News article URL
-   * @returns true if already published
+   * @param title - News title (optional, for duplicate title check)
+   * @returns true if already published (by URL or similar title)
    */
-  isAlreadyPublished(url: string): boolean {
-    return this.publishedNews.has(url);
+  isAlreadyPublished(url: string, title?: string): boolean {
+    // URL 체크
+    if (this.publishedNews.has(url)) {
+      return true;
+    }
+
+    // 제목 체크 (제목이 제공된 경우)
+    if (title) {
+      const normalizedTitle = this.normalizeTitle(title);
+      if (this.publishedTitles.has(normalizedTitle)) {
+        this.logger.debug(`Duplicate title detected: ${title}`);
+        return true;
+      }
+    }
+
+    return false;
   }
 
   /**
@@ -102,6 +137,12 @@ export class PublishedNewsTrackingService {
       };
 
       this.publishedNews.set(url, record);
+
+      // 제목 인덱스에도 추가
+      if (title) {
+        this.publishedTitles.add(this.normalizeTitle(title));
+      }
+
       await this.savePublishedNews();
 
       this.logger.log(`Marked as published: ${title}`);

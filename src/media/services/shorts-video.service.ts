@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { promises as fs } from 'fs';
 import * as path from 'path';
 import ffmpeg from 'fluent-ffmpeg';
+import { SubtitleTiming } from './tts.service';
 
 /**
  * YouTube Shorts 전용 비디오 렌더링 서비스
@@ -56,6 +57,7 @@ export class ShortsVideoService {
    * @param imagePath 배경 이미지 경로
    * @param title 뉴스 제목 (자막용)
    * @param script Shorts 스크립트 (자막용)
+   * @param subtitles 자막 타이밍 정보 (옵션)
    * @returns 생성된 비디오 파일 경로
    */
   async createShortsVideo(
@@ -63,6 +65,7 @@ export class ShortsVideoService {
     imagePath: string,
     title: string,
     script: string,
+    subtitles?: SubtitleTiming[],
   ): Promise<string> {
     const timestamp = Date.now();
     const outputPath = path.join(this.outputDir, `shorts_${timestamp}.mp4`);
@@ -89,6 +92,7 @@ export class ShortsVideoService {
         script,
         outputPath,
         audioDuration,
+        subtitles,
       );
 
       this.logger.log(`Shorts video created successfully: ${outputPath}`);
@@ -160,7 +164,7 @@ export class ShortsVideoService {
    * FFmpeg 필터 체인:
    * 1. 이미지 스케일 및 크롭 (1080x1920 세로 중심)
    * 2. 제목 자막 추가 (상단, 대형 폰트)
-   * 3. 본문 스크립트 자막 추가 (하단, 고대비)
+   * 3. 본문 스크립트 자막 추가 (하단, 시간 동기화)
    * 4. 오디오 합성
    */
   private async renderVerticalVideo(
@@ -170,34 +174,59 @@ export class ShortsVideoService {
     script: string,
     outputPath: string,
     duration: number,
+    subtitles?: SubtitleTiming[],
   ): Promise<void> {
     return new Promise((resolve, reject) => {
-      // 텍스트 줄바꿈 처리 (1080px 너비에 맞춤)
-      // 제목: fontsize 48 기준 약 20자
-      // 스크립트: fontsize 36 기준 약 25자
+      // 제목 텍스트 줄바꿈 처리
       const wrappedTitle = this.wrapText(title, 20);
-      const wrappedScript = this.wrapText(script, 28);
-
-      // 자막 텍스트 준비 (특수문자 이스케이프)
       const escapedTitle = this.escapeFFmpegText(wrappedTitle);
-      const escapedScript = this.escapeFFmpegText(wrappedScript);
 
       // FFmpeg 필터 체인 구성
       const videoFilters = [
-        // 이미지를 세로 화면에 맞게 스케일 및 크롭
-        `scale=1080:1920:force_original_aspect_ratio=increase`,
-        `crop=1080:1920`,
+        // 이미지를 세로 화면에 맞게 스케일 (비율 유지, 검은 배경 패딩)
+        `scale=1080:1920:force_original_aspect_ratio=decrease`,
+        `pad=1080:1920:(ow-iw)/2:(oh-ih)/2:black`,
 
-        // 제목 자막 (상단 중앙, Shorts에 맞는 폰트 크기)
+        // 빨간색 하이라이트 바 (롱폼 스타일)
+        `drawbox=x=60:y=100:w=8:h=120:color=red@1.0:t=fill`,
+
+        // YBC News 로고 텍스트
+        `drawtext=fontfile=/System/Library/Fonts/AppleSDGothicNeo.ttc:text='YBC News':` +
+        `fontcolor=white:fontsize=32:` +
+        `x=80:y=110`,
+
+        // 제목 자막 (YBC News 아래, 흰색 텍스트)
         `drawtext=fontfile=/System/Library/Fonts/AppleSDGothicNeo.ttc:text='${escapedTitle}':` +
-        `fontcolor=white:fontsize=48:box=1:boxcolor=black@0.7:boxborderw=8:` +
-        `x=(w-text_w)/2:y=120:line_spacing=10`,
-
-        // 본문 스크립트 자막 (하단, 가독성 높은 크기)
-        `drawtext=fontfile=/System/Library/Fonts/AppleSDGothicNeo.ttc:text='${escapedScript}':` +
-        `fontcolor=white:fontsize=36:box=1:boxcolor=black@0.7:boxborderw=6:` +
-        `x=(w-text_w)/2:y=h-th-200:line_spacing=8`,
+        `fontcolor=white:fontsize=42:` +
+        `x=80:y=160:line_spacing=10`,
       ];
+
+      // 시간 동기화 자막 추가
+      if (subtitles && subtitles.length > 0) {
+        // 각 문장에 대해 시간 기반 자막 추가
+        for (const subtitle of subtitles) {
+          const wrappedSubtitle = this.wrapText(subtitle.text, 28);
+          const escapedSubtitle = this.escapeFFmpegText(wrappedSubtitle);
+
+          // enable='between(t,start,end)'로 시간 구간에만 표시
+          videoFilters.push(
+            `drawtext=fontfile=/System/Library/Fonts/AppleSDGothicNeo.ttc:text='${escapedSubtitle}':` +
+            `fontcolor=white:fontsize=36:box=1:boxcolor=black@0.7:boxborderw=6:` +
+            `x=(w-text_w)/2:y=h-th-200:line_spacing=8:` +
+            `enable='between(t,${subtitle.startTime.toFixed(2)},${subtitle.endTime.toFixed(2)})'`
+          );
+        }
+      } else {
+        // 자막 타이밍이 없으면 전체 스크립트를 고정 표시
+        const wrappedScript = this.wrapText(script, 28);
+        const escapedScript = this.escapeFFmpegText(wrappedScript);
+
+        videoFilters.push(
+          `drawtext=fontfile=/System/Library/Fonts/AppleSDGothicNeo.ttc:text='${escapedScript}':` +
+          `fontcolor=white:fontsize=36:box=1:boxcolor=black@0.7:boxborderw=6:` +
+          `x=(w-text_w)/2:y=h-th-200:line_spacing=8`
+        );
+      }
 
       ffmpeg()
         .input(imagePath)
@@ -246,10 +275,10 @@ export class ShortsVideoService {
       .replace(/\\/g, '\\\\\\\\') // 백슬래시
       .replace(/'/g, "'\\''") // 작은따옴표 (shell escape)
       .replace(/:/g, '\\:') // 콜론
-      .replace(/\n/g, ' ') // 줄바꿈 제거 (공백으로 대체)
       .replace(/\[/g, '\\[') // 대괄호
       .replace(/\]/g, '\\]')
       .replace(/"/g, '\\"'); // 큰따옴표
+    // 줄바꿈은 유지하여 FFmpeg drawtext에서 멀티라인 지원
   }
 
   /**

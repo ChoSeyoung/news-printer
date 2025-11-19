@@ -309,12 +309,12 @@ ${truncatedContent}`;
    * - 중간: 핵심 정보 전달
    * - 마지막: 강렬한 마무리 또는 Call-to-Action
    */
-  async generateShortsScript(content: string): Promise<string> {
+  async generateShortsScript(title: string, content: string): Promise<string> {
     try {
       this.logger.debug('Generating Shorts script with Gemini API');
 
       // Shorts 프롬프트 생성
-      const prompt = this.buildShortsPrompt(content);
+      const prompt = this.buildShortsPrompt(title, content);
 
       // Gemini API 호출
       const result = await this.model.generateContent(prompt);
@@ -347,17 +347,29 @@ ${truncatedContent}`;
    * - 세로 화면 시청에 적합
    * - YouTube Shorts 알고리즘 최적화
    */
-  private buildShortsPrompt(content: string): string {
+  private buildShortsPrompt(title: string, content: string): string {
     // 컨텐츠가 너무 길면 앞부분만 사용 (토큰 절약)
     const truncatedContent = content.length > 1500 ? content.substring(0, 1500) + '...' : content;
 
-    return `Shorts 60초 스크립트 생성. JSON반환: {"script":"..."}
+    return `뉴스 앵커가 시청자에게 전달하는 60초 Shorts 스크립트 생성. JSON반환: {"script":"..."}
+
+제목: ${title}
+
+중요:
+- 반드시 위 제목과 관련된 내용만 요약하세요
+- 제목과 무관한 내용은 완전히 무시하세요
+- 기사에 없는 내용을 절대 생성하지 마세요
+- 저작권 경고문, 송고 정보, 제보 안내, 광고 문구는 무시하세요
+- 기사 내용이 부족하면 제목만 바탕으로 간단히 요약하세요
 
 규칙:
-- 첫3초 Hook 필수 (충격적/흥미로운 내용)
-- 150-200자 (60초 분량)
-- 짧은문장, 핵심만
-- 마무리멘트 제외
+- 뉴스 앵커 말투 (예: "~했습니다", "~로 알려졌습니다", "~라고 전했습니다")
+- 첫 문장에 핵심 내용 Hook (시청자 이탈 방지)
+- 150-200자 (60초 TTS 분량)
+- 객관적이고 신뢰감 있는 톤
+- 짧고 명확한 문장으로 구성
+- "~입니다" 종결어미 사용
+- 마무리멘트나 인사말 제외
 
 기사:
 ${truncatedContent}`;

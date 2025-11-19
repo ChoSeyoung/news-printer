@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { GeminiService } from '../../news/services/gemini.service';
-import { TtsService } from './tts.service';
+import { TtsService, SubtitleTiming } from './tts.service';
 import { ShortsVideoService } from './shorts-video.service';
 import { YoutubeService } from './youtube.service';
 import { SeoOptimizerService } from './seo-optimizer.service';
@@ -94,6 +94,7 @@ export class ShortsPipelineService {
       // 1️⃣ Gemini AI로 60초 요약 스크립트 생성
       this.logger.log('Step 1: Generating 60-second Shorts script with Gemini');
       const shortsScript = await this.geminiService.generateShortsScript(
+        options.title,
         options.newsContent,
       );
 
@@ -103,23 +104,60 @@ export class ShortsPipelineService {
 
       this.logger.debug(`Generated Shorts script: ${shortsScript}`);
 
-      // 2️⃣ Google TTS로 음성 생성
-      this.logger.log('Step 2: Generating TTS audio');
-      audioPath = await this.ttsService.generateSpeech({
+      // 2️⃣ Google TTS로 음성 생성 (타임포인트 포함)
+      this.logger.log('Step 2: Generating TTS audio with timepoints');
+      const ttsResult = await this.ttsService.generateSpeechWithTimings({
         text: shortsScript,
         voice: 'FEMALE',
         speakingRate: 1.0,
+        enableTimepoints: true,
       });
+      audioPath = ttsResult.audioPath;
+      const subtitles = ttsResult.subtitles;
 
       // 3️⃣ 세로 영상 렌더링 (9:16 비율)
       this.logger.log('Step 3: Rendering vertical video (9:16 aspect ratio)');
 
       // 기사 이미지 사용, 없으면 기본 이미지
       let imagePath: string;
+      this.logger.debug(`Image URLs received: ${JSON.stringify(options.imageUrls)}`);
+
       if (options.imageUrls && options.imageUrls.length > 0) {
-        downloadedImagePaths = await this.imageSearchService.downloadImagesFromUrls([options.imageUrls[0]]);
-        imagePath = downloadedImagePaths.length > 0 ? downloadedImagePaths[0] : await this.getDefaultShortsImage();
+        // 로고/플레이스홀더 이미지 필터링 (logo, bg_, icon 등 제외)
+        const validImageUrls = options.imageUrls.filter(url => {
+          const lowerUrl = url.toLowerCase();
+          return !lowerUrl.includes('logo') &&
+                 !lowerUrl.includes('bg_') &&
+                 !lowerUrl.includes('icon') &&
+                 !lowerUrl.includes('placeholder') &&
+                 (lowerUrl.endsWith('.jpg') || lowerUrl.endsWith('.jpeg') || lowerUrl.endsWith('.png') || lowerUrl.endsWith('.webp'));
+        });
+
+        this.logger.debug(`Filtered image URLs: ${JSON.stringify(validImageUrls)}`);
+
+        // 필터링된 이미지 중 첫 번째 시도, 없으면 원본 중 두 번째 시도
+        let imageUrlToDownload: string | undefined;
+        if (validImageUrls.length > 0) {
+          imageUrlToDownload = validImageUrls[0];
+        } else if (options.imageUrls.length > 1) {
+          imageUrlToDownload = options.imageUrls[1]; // 첫 번째가 로고일 수 있으므로 두 번째 시도
+        } else {
+          imageUrlToDownload = options.imageUrls[0];
+        }
+
+        this.logger.log(`Downloading article image: ${imageUrlToDownload}`);
+        downloadedImagePaths = await this.imageSearchService.downloadImagesFromUrls([imageUrlToDownload]);
+        this.logger.debug(`Downloaded images: ${JSON.stringify(downloadedImagePaths)}`);
+
+        if (downloadedImagePaths.length > 0) {
+          imagePath = downloadedImagePaths[0];
+          this.logger.log(`Using article image: ${imagePath}`);
+        } else {
+          this.logger.warn('Image download failed, using default image');
+          imagePath = await this.getDefaultShortsImage();
+        }
       } else {
+        this.logger.warn('No article images available, using default image');
         imagePath = await this.getDefaultShortsImage();
       }
 
@@ -128,6 +166,7 @@ export class ShortsPipelineService {
         imagePath,
         options.title,
         shortsScript,
+        subtitles,
       );
 
       // 4️⃣ Shorts 메타데이터 준비 (제목, 설명, 해시태그)
@@ -218,8 +257,10 @@ export class ShortsPipelineService {
     const text = `${title} ${script}`;
     const words = text.split(/\s+/);
 
-    // 3글자 이상 단어만 추출 (한글 기준)
-    const keywords = words.filter((word) => word.length >= 3);
+    // 특수문자 제거 및 3글자 이상 단어만 추출
+    const keywords = words
+      .map(word => word.replace(/[^가-힣a-zA-Z0-9]/g, '')) // 특수문자 제거
+      .filter(word => word.length >= 3); // 3글자 이상
 
     // 중복 제거 및 상위 10개 반환
     return [...new Set(keywords)].slice(0, 10);
