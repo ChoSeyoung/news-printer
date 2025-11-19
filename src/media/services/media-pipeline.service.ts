@@ -4,7 +4,6 @@ import { VideoService } from './video.service';
 import { YoutubeService, YoutubeUploadResult } from './youtube.service';
 import { SeoOptimizerService } from './seo-optimizer.service';
 import { ThumbnailService } from './thumbnail.service';
-import { KeywordExtractionService } from './keyword-extraction.service';
 import { ImageSearchService } from './image-search.service';
 import { PublishedNewsTrackingService } from './published-news-tracking.service';
 import { GeminiService } from '../../news/services/gemini.service';
@@ -53,7 +52,6 @@ export class MediaPipelineService {
     private readonly youtubeService: YoutubeService,
     private readonly seoOptimizerService: SeoOptimizerService,
     private readonly thumbnailService: ThumbnailService,
-    private readonly keywordExtractionService: KeywordExtractionService,
     private readonly imageSearchService: ImageSearchService,
     private readonly publishedNewsTrackingService: PublishedNewsTrackingService,
     private readonly geminiService: GeminiService,
@@ -104,30 +102,14 @@ export class MediaPipelineService {
       anchorAudioPath = anchorPath;
       reporterAudioPath = reporterPath;
 
-      // Step 2: Download background images (RSS images first, then Pexels/Unsplash if needed)
+      // Step 2: Download background images from RSS feed
       this.logger.log('Step 2/6: Downloading background images');
       try {
-        // First, download images from RSS feed if available
+        // Download images from RSS feed if available
         if (options.imageUrls && options.imageUrls.length > 0) {
           this.logger.log(`Found ${options.imageUrls.length} images from RSS feed`);
           backgroundImagePaths = await this.imageSearchService.downloadImagesFromUrls(options.imageUrls);
           this.logger.log(`Downloaded ${backgroundImagePaths.length} images from RSS feed`);
-        }
-
-        // If we need more images, search Pexels/Unsplash
-        const targetImageCount = 4;
-        if (backgroundImagePaths.length < targetImageCount) {
-          const remainingCount = targetImageCount - backgroundImagePaths.length;
-          this.logger.log(`Need ${remainingCount} more images, searching Pexels/Unsplash`);
-
-          const keywords = await this.keywordExtractionService.extractKeywords(
-            options.title,
-            options.newsContent,
-          );
-          this.logger.debug(`Extracted keywords: ${keywords}`);
-
-          const searchedImages = await this.imageSearchService.searchAndDownloadImages(keywords, remainingCount);
-          backgroundImagePaths = [...backgroundImagePaths, ...searchedImages];
         }
 
         this.logger.log(`Total ${backgroundImagePaths.length} background images ready`);

@@ -8,7 +8,6 @@ import { MediaPipelineService } from './services/media-pipeline.service';
 import { TokenService } from './services/token.service';
 import { SeoOptimizerService } from './services/seo-optimizer.service';
 import { ThumbnailService } from './services/thumbnail.service';
-import { KeywordExtractionService } from './services/keyword-extraction.service';
 import { ImageSearchService } from './services/image-search.service';
 import { PublishedNewsTrackingService } from './services/published-news-tracking.service';
 // import { FaceDetectionService } from './services/face-detection.service'; // OpenCV 에러로 비활성화
@@ -32,7 +31,6 @@ import { NewsModule } from '../news/news.module';
     TokenService,
     SeoOptimizerService,
     ThumbnailService,
-    KeywordExtractionService,
     ImageSearchService,
     PublishedNewsTrackingService,
     // FaceDetectionService, // OpenCV 에러로 비활성화

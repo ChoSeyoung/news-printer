@@ -7,6 +7,7 @@ import { ShortsPipelineService } from '../../media/services/shorts-pipeline.serv
 import { TrendsService } from './trends.service';
 import { UrgentNewsService } from './urgent-news.service';
 import { ConfigService } from '@nestjs/config';
+import { NewsItemDto } from '../dto/news-item.dto';
 
 /**
  * 자동 업로드 스케줄 서비스
@@ -195,7 +196,7 @@ export class ScheduleService {
       );
 
       // 뉴스 선택 로직: 긴급 뉴스 우선, 부족하면 일반 뉴스로 채우기
-      let newsToPublish = [];
+      let newsToPublish: NewsItemDto[] = [];
 
       if (urgentNews.length > 0) {
         const avgScore = Math.round(
@@ -394,6 +395,7 @@ export class ScheduleService {
             title: news.title,
             newsContent: news.fullContent || news.description,
             newsUrl: news.link,
+            imageUrls: news.imageUrls,
             privacyStatus: 'public', // 수익화를 위해 공개 설정
           });
 

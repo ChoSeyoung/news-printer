@@ -65,7 +65,8 @@ export class FaceDetectionService {
    */
   constructor() {
     fs.ensureDirSync(this.tempDir);
-    this.initializeCascade();
+    // OpenCV 에러로 비활성화
+    // this.initializeCascade();
   }
 
   /**

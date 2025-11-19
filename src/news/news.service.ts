@@ -5,7 +5,7 @@ import { NewsItemDto, NewsSourceInfo } from './dto/news-item.dto';
 import { RssFeed, RssItem } from './interfaces/rss-feed.interface';
 import { ArticleScraperService } from './services/article-scraper.service';
 import { GeminiService } from './services/gemini.service';
-import { getEnabledNewsSources, getCategorySupportingSources } from './config/news-sources.config';
+import { getEnabledNewsSources, getCategorySupportingSources, getCategoryRssUrl } from './config/news-sources.config';
 
 /**
  * 뉴스 서비스
@@ -16,8 +16,7 @@ import { getEnabledNewsSources, getCategorySupportingSources } from './config/ne
  * 1. 조선일보 - 보수 성향, 종합 일간지
  * 2. 연합뉴스 - 중도 성향, 통신사 (속보성)
  * 3. 한겨레 - 진보 성향, 종합 일간지
- * 4. KBS 뉴스 - 중립 성향, 공영방송
- * 5. 한국경제 - 경제 전문지
+ * 4. 한국경제 - 경제 전문지
  *
  * 주요 기능:
  * - 다중 언론사 RSS 피드 파싱 및 통합
@@ -146,13 +145,8 @@ export class NewsService {
       throw new Error(`News source not found: ${sourceId}`);
     }
 
-    // RSS URL 생성
-    let rssUrl = source.rssUrl;
-
-    // 조선일보는 카테고리별 RSS 지원
-    if (source.id === 'chosun' && source.supportCategories) {
-      rssUrl = `${source.rssUrl}/${category}/?outputType=xml`;
-    }
+    // RSS URL 생성 (카테고리별 URL 지원)
+    const rssUrl = getCategoryRssUrl(sourceId, category);
 
     this.logger.debug(`Fetching RSS from ${source.name}: ${rssUrl}`);
 

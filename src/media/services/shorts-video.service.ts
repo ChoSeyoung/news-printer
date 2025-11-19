@@ -2,7 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { promises as fs } from 'fs';
 import * as path from 'path';
-import * as ffmpeg from 'fluent-ffmpeg';
+import ffmpeg from 'fluent-ffmpeg';
 
 /**
  * YouTube Shorts 전용 비디오 렌더링 서비스
@@ -116,6 +116,45 @@ export class ShortsVideoService {
   }
 
   /**
+   * 텍스트를 지정된 너비에 맞게 줄바꿈
+   * @param text 원본 텍스트
+   * @param maxCharsPerLine 한 줄당 최대 문자 수
+   * @returns 줄바꿈된 텍스트
+   */
+  private wrapText(text: string, maxCharsPerLine: number): string {
+    const words = text.split(' ');
+    const lines: string[] = [];
+    let currentLine = '';
+
+    for (const word of words) {
+      if (currentLine.length + word.length + 1 <= maxCharsPerLine) {
+        currentLine += (currentLine ? ' ' : '') + word;
+      } else {
+        if (currentLine) {
+          lines.push(currentLine);
+        }
+        // 단어가 너무 길면 강제 분할
+        if (word.length > maxCharsPerLine) {
+          let remaining = word;
+          while (remaining.length > maxCharsPerLine) {
+            lines.push(remaining.substring(0, maxCharsPerLine));
+            remaining = remaining.substring(maxCharsPerLine);
+          }
+          currentLine = remaining;
+        } else {
+          currentLine = word;
+        }
+      }
+    }
+
+    if (currentLine) {
+      lines.push(currentLine);
+    }
+
+    return lines.join('\n');
+  }
+
+  /**
    * 세로 영상 렌더링 (9:16 비율)
    *
    * FFmpeg 필터 체인:
@@ -133,9 +172,15 @@ export class ShortsVideoService {
     duration: number,
   ): Promise<void> {
     return new Promise((resolve, reject) => {
+      // 텍스트 줄바꿈 처리 (1080px 너비에 맞춤)
+      // 제목: fontsize 48 기준 약 20자
+      // 스크립트: fontsize 36 기준 약 25자
+      const wrappedTitle = this.wrapText(title, 20);
+      const wrappedScript = this.wrapText(script, 28);
+
       // 자막 텍스트 준비 (특수문자 이스케이프)
-      const escapedTitle = this.escapeFFmpegText(title);
-      const escapedScript = this.escapeFFmpegText(script);
+      const escapedTitle = this.escapeFFmpegText(wrappedTitle);
+      const escapedScript = this.escapeFFmpegText(wrappedScript);
 
       // FFmpeg 필터 체인 구성
       const videoFilters = [
@@ -143,15 +188,15 @@ export class ShortsVideoService {
         `scale=1080:1920:force_original_aspect_ratio=increase`,
         `crop=1080:1920`,
 
-        // 제목 자막 (상단 중앙, 대형 폰트, 고대비)
+        // 제목 자막 (상단 중앙, Shorts에 맞는 폰트 크기)
         `drawtext=fontfile=/System/Library/Fonts/AppleSDGothicNeo.ttc:text='${escapedTitle}':` +
-        `fontcolor=white:fontsize=64:box=1:boxcolor=black@0.7:boxborderw=10:` +
-        `x=(w-text_w)/2:y=100`,
-
-        // 본문 스크립트 자막 (하단, 중형 폰트, 여러 줄 지원)
-        `drawtext=fontfile=/System/Library/Fonts/AppleSDGothicNeo.ttc:text='${escapedScript}':` +
         `fontcolor=white:fontsize=48:box=1:boxcolor=black@0.7:boxborderw=8:` +
-        `x=(w-text_w)/2:y=h-th-150`,
+        `x=(w-text_w)/2:y=120:line_spacing=10`,
+
+        // 본문 스크립트 자막 (하단, 가독성 높은 크기)
+        `drawtext=fontfile=/System/Library/Fonts/AppleSDGothicNeo.ttc:text='${escapedScript}':` +
+        `fontcolor=white:fontsize=36:box=1:boxcolor=black@0.7:boxborderw=6:` +
+        `x=(w-text_w)/2:y=h-th-200:line_spacing=8`,
       ];
 
       ffmpeg()
@@ -198,12 +243,13 @@ export class ShortsVideoService {
    */
   private escapeFFmpegText(text: string): string {
     return text
-      .replace(/\\/g, '\\\\') // 백슬래시
-      .replace(/'/g, "\\'") // 작은따옴표
+      .replace(/\\/g, '\\\\\\\\') // 백슬래시
+      .replace(/'/g, "'\\''") // 작은따옴표 (shell escape)
       .replace(/:/g, '\\:') // 콜론
       .replace(/\n/g, ' ') // 줄바꿈 제거 (공백으로 대체)
       .replace(/\[/g, '\\[') // 대괄호
-      .replace(/\]/g, '\\]');
+      .replace(/\]/g, '\\]')
+      .replace(/"/g, '\\"'); // 큰따옴표
   }
 
   /**

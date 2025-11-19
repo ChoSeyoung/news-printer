@@ -227,34 +227,90 @@ export class ArticleScraperService {
    * Cheerio를 사용하여 HTML에서 기사 내용을 파싱합니다 (대체 방법)
    *
    * @param html - HTML 문자열
-   * @returns 기사 데이터 (내용만, 이미지 없음)
+   * @returns 기사 데이터 (내용, 이미지 URL)
    *
    * 추출 방법:
-   * - <p class="article-body__content-text"> 요소에서 텍스트 추출
-   * - 대체 방법이므로 이미지는 추출하지 않음
+   * - 다중 언론사 셀렉터 지원
+   * - 조선일보, 한겨레, 연합뉴스 등 각 언론사별 HTML 구조 대응
    */
   private parseHtmlContent(html: string): ArticleData {
     const $ = cheerio.load(html);
 
-    // article-body__content-text 클래스를 가진 모든 <p> 태그 찾기
-    const paragraphs: string[] = [];
+    // 다중 언론사 셀렉터 (우선순위 순서)
+    const contentSelectors = [
+      // 조선일보
+      '.article-body__content-text',
+      // 한겨레
+      '.article-text p',
+      '.text p',
+      '#a-left-scroll p',
+      'article p',
+      // 연합뉴스
+      '.article-txt p',
+      '.story-news article p',
+      // 일반적인 기사 셀렉터
+      '.article-content p',
+      '.news-content p',
+      '.content p',
+      'article.content p',
+      // 최후의 수단: 본문 영역 p 태그
+      '#article-body p',
+      '.article_body p',
+    ];
 
-    $('.article-body__content-text').each((_, element) => {
-      const text = this.removeEscapeCharacters($(element).text().trim());
-      if (text) {
-        paragraphs.push(text);
+    const paragraphs: string[] = [];
+    const imageUrls: string[] = [];
+
+    // 각 셀렉터를 순차적으로 시도
+    for (const selector of contentSelectors) {
+      $(selector).each((_, element) => {
+        const text = this.removeEscapeCharacters($(element).text().trim());
+        if (text && text.length > 20) { // 너무 짧은 텍스트 제외
+          paragraphs.push(text);
+        }
+      });
+
+      if (paragraphs.length > 0) {
+        this.logger.debug(`Found ${paragraphs.length} paragraphs using selector: ${selector}`);
+        break; // 첫 번째로 성공한 셀렉터로 중단
       }
-    });
+    }
+
+    // 이미지 추출 시도
+    const imageSelectors = [
+      '.article-text img',
+      '.text img',
+      'article img',
+      '.article-content img',
+      '#article-body img',
+    ];
+
+    for (const selector of imageSelectors) {
+      $(selector).each((_, element) => {
+        const src = $(element).attr('src') || $(element).attr('data-src');
+        if (src && !src.toLowerCase().endsWith('.gif')) {
+          // 상대 경로를 절대 경로로 변환
+          const absoluteUrl = src.startsWith('http') ? src : `https:${src.startsWith('//') ? src : `//${src}`}`;
+          if (!imageUrls.includes(absoluteUrl)) {
+            imageUrls.push(absoluteUrl);
+          }
+        }
+      });
+
+      if (imageUrls.length > 0) {
+        break;
+      }
+    }
 
     if (paragraphs.length === 0) {
-      this.logger.debug('No paragraphs found with .article-body__content-text class');
+      this.logger.debug('No paragraphs found with any selector');
       return { content: '', imageUrls: [] };
     }
 
     // 단락들을 이중 개행으로 연결
     return {
       content: paragraphs.join('\n\n'),
-      imageUrls: [], // 대체 방법에서는 이미지 추출 안 함
+      imageUrls,
     };
   }
 

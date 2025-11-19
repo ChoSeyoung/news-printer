@@ -3,12 +3,11 @@ import { NewsSourceConfig } from '../interfaces/news-source.interface';
 /**
  * 뉴스 출처 설정
  *
- * 균형 구성 (5개 언론사):
+ * 균형 구성 (4개 언론사):
  * 1. 조선일보 - 보수 성향, 종합 일간지
  * 2. 연합뉴스 - 중도 성향, 통신사 (속보성 강함)
  * 3. 한겨레 - 진보 성향, 종합 일간지
- * 4. KBS 뉴스 - 중립 성향, 공영방송
- * 5. 한국경제 - 경제 전문지
+ * 4. 한국경제 - 경제 전문지
  */
 export const NEWS_SOURCES: NewsSourceConfig = {
   /**
@@ -19,14 +18,15 @@ export const NEWS_SOURCES: NewsSourceConfig = {
     name: '조선일보',
     nameEn: 'Chosun Ilbo',
     website: 'https://www.chosun.com',
-    rssUrl: 'https://www.chosun.com/arc/outboundfeeds/rss/category',
+    rssUrl: 'https://www.chosun.com/arc/outboundfeeds/rss/?outputType=xml',
     politicalStance: 'conservative',
     type: 'general',
     enabled: true,
     supportCategories: true,
-    categories: ['politics', 'economy', 'society', 'international', 'culture', 'sports', 'science', 'opinion'],
-    parsingMethod: 'custom',
-    customParser: 'parseChosunRss',
+    parsingMethod: 'standard',
+    categoryRssUrls: {
+      politics: 'https://www.chosun.com/arc/outboundfeeds/rss/category/politics/?outputType=xml',
+    },
   },
 
   /**
@@ -41,8 +41,11 @@ export const NEWS_SOURCES: NewsSourceConfig = {
     politicalStance: 'moderate',
     type: 'agency',
     enabled: true,
-    supportCategories: false,
+    supportCategories: true,
     parsingMethod: 'standard',
+    categoryRssUrls: {
+      politics: 'https://www.yna.co.kr/rss/politics.xml',
+    },
   },
 
   /**
@@ -57,24 +60,11 @@ export const NEWS_SOURCES: NewsSourceConfig = {
     politicalStance: 'progressive',
     type: 'general',
     enabled: true,
-    supportCategories: false,
+    supportCategories: true,
     parsingMethod: 'standard',
-  },
-
-  /**
-   * KBS 뉴스 - 중립 성향 공영방송
-   */
-  kbs: {
-    id: 'kbs',
-    name: 'KBS 뉴스',
-    nameEn: 'KBS News',
-    website: 'https://news.kbs.co.kr',
-    rssUrl: 'https://news.kbs.co.kr/rss/headline.xml',
-    politicalStance: 'moderate',
-    type: 'broadcasting',
-    enabled: true,
-    supportCategories: false,
-    parsingMethod: 'standard',
+    categoryRssUrls: {
+      politics: 'https://www.hani.co.kr/rss/politics/',
+    },
   },
 
   /**
@@ -85,12 +75,15 @@ export const NEWS_SOURCES: NewsSourceConfig = {
     name: '한국경제',
     nameEn: 'Korea Economic Daily',
     website: 'https://www.hankyung.com',
-    rssUrl: 'https://www.hankyung.com/feed',
+    rssUrl: 'https://www.hankyung.com/feed/all-news',
     politicalStance: 'moderate',
     type: 'economic',
     enabled: true,
-    supportCategories: false,
+    supportCategories: true,
     parsingMethod: 'standard',
+    categoryRssUrls: {
+      politics: 'https://www.hankyung.com/feed/politics',
+    },
   },
 };
 
@@ -115,4 +108,22 @@ export function getCategorySupportingSources() {
   return Object.values(NEWS_SOURCES).filter(
     (source) => source.enabled && source.supportCategories,
   );
+}
+
+/**
+ * 특정 카테고리의 RSS URL 가져오기
+ * @param sourceId - 언론사 ID
+ * @param category - 카테고리 (politics, economy, society, etc.)
+ * @returns 카테고리별 RSS URL 또는 기본 RSS URL
+ */
+export function getCategoryRssUrl(sourceId: string, category: string): string {
+  const source = NEWS_SOURCES[sourceId];
+  if (!source) return '';
+
+  // 'all' 카테고리이거나 카테고리별 URL이 없으면 기본 URL 반환
+  if (category === 'all' || !source.categoryRssUrls || !source.categoryRssUrls[category]) {
+    return source.rssUrl;
+  }
+
+  return source.categoryRssUrls[category];
 }

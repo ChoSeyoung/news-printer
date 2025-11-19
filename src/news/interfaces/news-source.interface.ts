@@ -39,6 +39,9 @@ export interface NewsSource {
 
   /** 커스텀 파싱 함수 이름 (parsingMethod가 'custom'인 경우) */
   customParser?: string;
+
+  /** 카테고리별 RSS URL (선택사항) */
+  categoryRssUrls?: Record<string, string>;
 }
 
 /**

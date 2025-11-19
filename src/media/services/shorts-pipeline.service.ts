@@ -4,6 +4,7 @@ import { TtsService } from './tts.service';
 import { ShortsVideoService } from './shorts-video.service';
 import { YoutubeService } from './youtube.service';
 import { SeoOptimizerService } from './seo-optimizer.service';
+import { ImageSearchService } from './image-search.service';
 import { promises as fs } from 'fs';
 
 /**
@@ -18,6 +19,9 @@ export interface CreateShortsOptions {
 
   /** 뉴스 원문 URL */
   newsUrl?: string;
+
+  /** 기사 이미지 URLs */
+  imageUrls?: string[];
 
   /** 공개 설정 (기본: public) */
   privacyStatus?: 'public' | 'private' | 'unlisted';
@@ -67,6 +71,7 @@ export class ShortsPipelineService {
     private readonly shortsVideoService: ShortsVideoService,
     private readonly youtubeService: YoutubeService,
     private readonly seoOptimizerService: SeoOptimizerService,
+    private readonly imageSearchService: ImageSearchService,
   ) {}
 
   /**
@@ -81,6 +86,7 @@ export class ShortsPipelineService {
     const startTime = Date.now();
     let audioPath: string | undefined;
     let videoPath: string | undefined;
+    let downloadedImagePaths: string[] = [];
 
     try {
       this.logger.log(`Starting Shorts creation: ${options.title}`);
@@ -99,13 +105,23 @@ export class ShortsPipelineService {
 
       // 2️⃣ Google TTS로 음성 생성
       this.logger.log('Step 2: Generating TTS audio');
-      audioPath = await this.ttsService.generateTTS(shortsScript, 'anchor');
+      audioPath = await this.ttsService.generateSpeech({
+        text: shortsScript,
+        voice: 'FEMALE',
+        speakingRate: 1.0,
+      });
 
       // 3️⃣ 세로 영상 렌더링 (9:16 비율)
       this.logger.log('Step 3: Rendering vertical video (9:16 aspect ratio)');
 
-      // 기본 이미지 사용 (나중에 뉴스 관련 이미지로 대체 가능)
-      const imagePath = await this.getDefaultShortsImage();
+      // 기사 이미지 사용, 없으면 기본 이미지
+      let imagePath: string;
+      if (options.imageUrls && options.imageUrls.length > 0) {
+        downloadedImagePaths = await this.imageSearchService.downloadImagesFromUrls([options.imageUrls[0]]);
+        imagePath = downloadedImagePaths.length > 0 ? downloadedImagePaths[0] : await this.getDefaultShortsImage();
+      } else {
+        imagePath = await this.getDefaultShortsImage();
+      }
 
       videoPath = await this.shortsVideoService.createShortsVideo(
         audioPath,
@@ -114,19 +130,17 @@ export class ShortsPipelineService {
         shortsScript,
       );
 
-      // 4️⃣ SEO 최적화 (제목, 설명, 해시태그)
-      this.logger.log('Step 4: Optimizing SEO metadata');
-      const seoMetadata = await this.seoOptimizerService.optimizeMetadata({
-        title: options.title,
-        description: shortsScript,
-        keywords: this.extractKeywords(options.title, shortsScript),
-      });
+      // 4️⃣ Shorts 메타데이터 준비 (제목, 설명, 해시태그)
+      this.logger.log('Step 4: Preparing Shorts metadata');
+
+      // Shorts는 간단한 태그 사용 (SEO 최적화 생략)
+      const basicTags = this.extractKeywords(options.title, shortsScript).slice(0, 5);
 
       // Shorts 전용 제목 추가 (#Shorts 해시태그)
-      const shortsTitle = this.optimizeShortsTitle(seoMetadata.title);
+      const shortsTitle = this.optimizeShortsTitle(options.title);
       const shortsDescription = this.buildShortsDescription(
         shortsScript,
-        seoMetadata.tags,
+        basicTags,
         options.newsUrl,
       );
 
@@ -137,7 +151,7 @@ export class ShortsPipelineService {
         description: shortsDescription,
         videoPath: videoPath,
         privacyStatus: options.privacyStatus || 'public',
-        tags: [...seoMetadata.tags, 'Shorts', '60초뉴스', '숏폼'],
+        tags: [...basicTags, 'Shorts', '60초뉴스', '숏폼'],
         categoryId: '25', // News & Politics 카테고리
       });
 
@@ -163,17 +177,17 @@ export class ShortsPipelineService {
       };
     } finally {
       // 6️⃣ 임시 파일 정리
-      await this.cleanupTempFiles(audioPath, videoPath);
+      await this.cleanupTempFiles(audioPath, videoPath, ...downloadedImagePaths);
     }
   }
 
   /**
    * Shorts 전용 제목 최적화
-   * #Shorts 해시태그 추가 및 길이 제한 (100자)
+   * 길이 제한 (100자)
    */
   private optimizeShortsTitle(title: string): string {
-    // #Shorts 해시태그가 없으면 추가
-    let optimizedTitle = title.includes('#Shorts') ? title : `${title} #Shorts`;
+    // #Shorts 해시태그 제거
+    let optimizedTitle = title.replace(/#Shorts/gi, '').trim();
 
     // YouTube 제목 길이 제한 (100자)
     if (optimizedTitle.length > 100) {
@@ -185,33 +199,16 @@ export class ShortsPipelineService {
 
   /**
    * Shorts 설명 구성
-   * - 60초 요약 스크립트
-   * - 해시태그
-   * - 원문 링크
+   * - 해시태그만 포함
    */
   private buildShortsDescription(
     script: string,
     tags: string[],
     newsUrl?: string,
   ): string {
-    const lines: string[] = [];
-
-    // 스크립트
-    lines.push(script);
-    lines.push('');
-
-    // 해시태그 (상위 10개)
-    const hashtags = tags.slice(0, 10).map((tag) => `#${tag}`);
-    lines.push(hashtags.join(' '));
-    lines.push('');
-
-    // 원문 링크
-    if (newsUrl) {
-      lines.push('📰 원문 보기:');
-      lines.push(newsUrl);
-    }
-
-    return lines.join('\n');
+    // 해시태그만 (상위 15개)
+    const hashtags = tags.slice(0, 15).map((tag) => `#${tag}`);
+    return hashtags.join(' ');
   }
 
   /**
@@ -232,7 +229,7 @@ export class ShortsPipelineService {
    * 기본 Shorts 배경 이미지 가져오기
    * TODO: 나중에 뉴스 관련 이미지로 대체
    */
-  private async getDefaultShortsImage(): string {
+  private async getDefaultShortsImage(): Promise<string> {
     // 임시로 단색 이미지 생성 또는 기본 이미지 경로 반환
     // 실제 구현에서는 뉴스 관련 이미지를 동적으로 생성하거나
     // 이미지 검색 API를 통해 가져올 수 있음
@@ -255,8 +252,9 @@ export class ShortsPipelineService {
   private async cleanupTempFiles(
     audioPath?: string,
     videoPath?: string,
+    ...additionalFiles: string[]
   ): Promise<void> {
-    const filesToDelete = [audioPath, videoPath].filter(Boolean) as string[];
+    const filesToDelete = [audioPath, videoPath, ...additionalFiles].filter(Boolean) as string[];
 
     for (const filePath of filesToDelete) {
       try {
