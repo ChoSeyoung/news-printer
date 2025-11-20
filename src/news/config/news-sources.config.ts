@@ -3,11 +3,13 @@ import { NewsSourceConfig } from '../interfaces/news-source.interface';
 /**
  * 뉴스 출처 설정
  *
- * 균형 구성 (4개 언론사):
+ * 균형 구성 (6개 언론사):
  * 1. 조선일보 - 보수 성향, 종합 일간지
- * 2. 연합뉴스 - 중도 성향, 통신사 (속보성 강함)
- * 3. 한겨레 - 진보 성향, 종합 일간지
- * 4. 한국경제 - 경제 전문지
+ * 2. 동아일보 - 보수 성향, 종합 일간지
+ * 3. 연합뉴스 - 중도 성향, 통신사 (속보성 강함)
+ * 4. 뉴시스 - 중도 성향, 통신사 (속보성 강함)
+ * 5. 한겨레 - 진보 성향, 종합 일간지
+ * 6. 한국경제 - 경제 전문지
  */
 export const NEWS_SOURCES: NewsSourceConfig = {
   /**
@@ -49,6 +51,25 @@ export const NEWS_SOURCES: NewsSourceConfig = {
   },
 
   /**
+   * 동아일보 - 보수 성향 종합 일간지
+   */
+  donga: {
+    id: 'donga',
+    name: '동아일보',
+    nameEn: 'Dong-A Ilbo',
+    website: 'https://www.donga.com',
+    rssUrl: 'http://rss.donga.com/total.xml',
+    politicalStance: 'conservative',
+    type: 'general',
+    enabled: true,
+    supportCategories: true,
+    parsingMethod: 'standard',
+    categoryRssUrls: {
+      politics: 'http://rss.donga.com/politics.xml',
+    },
+  },
+
+  /**
    * 한겨레 - 진보 성향 종합 일간지
    */
   hani: {
@@ -64,6 +85,25 @@ export const NEWS_SOURCES: NewsSourceConfig = {
     parsingMethod: 'standard',
     categoryRssUrls: {
       politics: 'https://www.hani.co.kr/rss/politics/',
+    },
+  },
+
+  /**
+   * 뉴시스 - 중도 성향 통신사
+   */
+  newsis: {
+    id: 'newsis',
+    name: '뉴시스',
+    nameEn: 'Newsis',
+    website: 'https://www.newsis.com',
+    rssUrl: 'https://www.newsis.com/RSS/allnews.xml',
+    politicalStance: 'moderate',
+    type: 'agency',
+    enabled: true,
+    supportCategories: true,
+    parsingMethod: 'standard',
+    categoryRssUrls: {
+      politics: 'https://www.newsis.com/RSS/politics.xml',
     },
   },
 

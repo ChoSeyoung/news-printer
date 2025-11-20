@@ -5,6 +5,7 @@ import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { NewsModule } from './news/news.module';
 import { MediaModule } from './media/media.module';
+import { DatabaseModule } from './database/database.module';
 
 @Module({
   imports: [
@@ -13,6 +14,7 @@ import { MediaModule } from './media/media.module';
       envFilePath: '.env',
     }),
     ScheduleModule.forRoot(),
+    DatabaseModule,
     NewsModule,
     MediaModule,
   ],

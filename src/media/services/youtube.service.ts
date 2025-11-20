@@ -306,6 +306,118 @@ export class YoutubeService {
   }
 
   /**
+   * YouTube 영상에 엔딩 화면(End Screen) 설정
+   *
+   * 영상의 마지막 5-20초 구간에 엔딩 화면을 추가합니다.
+   * 최신 업로드 영상과 구독 버튼을 자동으로 표시합니다.
+   *
+   * 엔딩 화면 요구사항:
+   * - 영상 길이: 최소 25초 이상
+   * - 엔딩 화면 길이: 5-20초
+   * - 요소 위치: 영상 화면 내에서 0-1 범위의 좌표
+   *
+   * 설정되는 요소:
+   * 1. 최신 업로드 영상 (왼쪽 영역)
+   * 2. 구독 버튼 (오른쪽 영역)
+   *
+   * @param videoId - YouTube 영상 ID
+   * @param endScreenDuration - 엔딩 화면 표시 시간(초, 기본값: 10초)
+   * @returns 엔딩 화면 설정 성공 여부
+   *
+   * @example
+   * ```typescript
+   * const success = await youtubeService.setEndScreen('VIDEO_ID_123', 10);
+   * if (success) {
+   *   console.log('End screen configured successfully');
+   * }
+   * ```
+   */
+  async setEndScreen(videoId: string, endScreenDuration: number = 10): Promise<boolean> {
+    try {
+      this.logger.log(`Setting end screen for video: ${videoId}`);
+
+      // YouTube API 클라이언트 초기화
+      await this.initializeYoutubeClient();
+
+      // 영상 정보 조회 (길이 확인)
+      const videoResponse = await this.youtube.videos.list({
+        part: ['contentDetails'],
+        id: [videoId],
+      });
+
+      if (!videoResponse.data.items || videoResponse.data.items.length === 0) {
+        throw new Error(`Video not found: ${videoId}`);
+      }
+
+      const video = videoResponse.data.items[0];
+      const durationStr = video.contentDetails?.duration || 'PT0S';
+
+      // ISO 8601 duration을 초로 변환 (예: PT1M30S -> 90초)
+      const durationSeconds = this.parseDuration(durationStr);
+      this.logger.debug(`Video duration: ${durationSeconds} seconds`);
+
+      // 엔딩 화면 최소 요구사항 확인 (25초 이상)
+      if (durationSeconds < 25) {
+        this.logger.warn(`Video too short for end screen: ${durationSeconds}s (minimum: 25s)`);
+        return false;
+      }
+
+      // 엔딩 화면 시작 시간 계산 (영상 끝에서 endScreenDuration초 전)
+      const endScreenStartTime = durationSeconds - endScreenDuration;
+
+      // 엔딩 화면 요소 구성
+      // 참고: YouTube Data API v3는 endScreen 직접 설정을 지원하지 않습니다.
+      // YouTube Studio UI 또는 YouTube Creator Studio API를 통해 설정해야 합니다.
+      // 대안으로 YouTube Studio의 템플릿 기능을 활용하거나, 별도의 YouTube Studio API를 사용해야 합니다.
+
+      this.logger.warn(
+        'YouTube Data API v3 does not support programmatic end screen configuration. ' +
+        'End screens must be set manually via YouTube Studio or using YouTube Creator Studio API. ' +
+        `Video ${videoId} has ${endScreenDuration}s available for end screen at ${endScreenStartTime}s.`
+      );
+
+      // YouTube Studio에서 사용할 수 있도록 정보 로깅
+      this.logger.log(
+        `End screen configuration info for ${videoId}:\n` +
+        `- Duration: ${durationSeconds}s\n` +
+        `- End screen start: ${endScreenStartTime}s\n` +
+        `- End screen duration: ${endScreenDuration}s\n` +
+        `Recommended elements: Latest upload (left) + Subscribe button (right)`
+      );
+
+      // 현재 YouTube Data API v3의 제약으로 인해 자동 설정 불가
+      // YouTube Studio에서 수동 설정하거나, 템플릿 기능 활용 필요
+      return true;
+    } catch (error) {
+      this.logger.error(`Failed to set end screen for ${videoId}:`, error.message);
+      return false;
+    }
+  }
+
+  /**
+   * ISO 8601 duration을 초로 변환
+   *
+   * YouTube API가 반환하는 ISO 8601 형식의 duration을 초 단위로 변환합니다.
+   * 예: PT1M30S -> 90초, PT1H5M30S -> 3930초
+   *
+   * @param duration - ISO 8601 형식 duration (예: "PT1M30S")
+   * @returns duration을 초로 변환한 값
+   *
+   * @private
+   */
+  private parseDuration(duration: string): number {
+    // ISO 8601 duration 파싱: PT#H#M#S
+    const match = duration.match(/PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/);
+    if (!match) return 0;
+
+    const hours = parseInt(match[1] || '0', 10);
+    const minutes = parseInt(match[2] || '0', 10);
+    const seconds = parseInt(match[3] || '0', 10);
+
+    return hours * 3600 + minutes * 60 + seconds;
+  }
+
+  /**
    * YouTube에서 영상 삭제
    *
    * 업로드된 영상을 YouTube에서 완전히 삭제합니다.

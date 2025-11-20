@@ -120,9 +120,22 @@ export class MediaPipelineService {
 
       // Step 3: Create video from audio with background images
       this.logger.log('Step 3/6: Creating video');
+
+      // 롱폼 영상 여부 판단: 60초 이상이면 롱폼으로 간주
+      // (쇼츠는 일반적으로 60초 미만)
+      const totalCharacters = options.anchorScript.length + options.reporterScript.length;
+      const estimatedDuration = Math.ceil(totalCharacters / 4); // 한국어 TTS: ~4자/초
+      const isLongForm = estimatedDuration >= 60;
+
+      if (isLongForm) {
+        this.logger.log(`Long-form video detected (estimated ${estimatedDuration}s) - adding 10s end screen`);
+      }
+
       videoPath = await this.videoService.createVideo({
         audioFiles: [anchorPath, reporterPath],
         backgroundImagePaths: backgroundImagePaths.length > 0 ? backgroundImagePaths : undefined,
+        addEndScreen: isLongForm, // 롱폼 영상에만 엔딩 화면 추가
+        endScreenDuration: 10, // 10초 엔딩 화면
       });
 
       // Step 4: Generate SEO-optimized metadata
@@ -192,6 +205,17 @@ export class MediaPipelineService {
       await this.cleanup(anchorAudioPath, reporterAudioPath, videoPath, thumbnailPath, ...backgroundImagePaths);
 
       if (uploadResult.success) {
+        // 롱폼 영상의 경우 엔딩 화면 설정 시도
+        if (isLongForm && uploadResult.videoId) {
+          this.logger.log(`Setting end screen for long-form video: ${uploadResult.videoId}`);
+          try {
+            await this.youtubeService.setEndScreen(uploadResult.videoId, 10);
+          } catch (error) {
+            this.logger.warn(`Failed to set end screen (will be available for manual setup): ${error.message}`);
+            // 엔딩 화면 설정 실패는 전체 업로드 실패로 처리하지 않음
+          }
+        }
+
         // Mark news as published to prevent duplicates
         if (options.newsUrl) {
           await this.publishedNewsTrackingService.markAsPublished(

@@ -21,6 +21,10 @@ export interface VideoOptions {
   height?: number;
   /** 배경 이미지 파일 경로 배열 (선택사항) */
   backgroundImagePaths?: string[];
+  /** 엔딩 화면 추가 여부 (롱폼 전용, 기본값: false) */
+  addEndScreen?: boolean;
+  /** 엔딩 화면 길이 (초, 기본값: 10) */
+  endScreenDuration?: number;
 }
 
 /**
@@ -180,6 +184,8 @@ export class VideoService {
         width: options.width || 1920,
         height: options.height || 1080,
         backgroundImagePaths: options.backgroundImagePaths,
+        addEndScreen: options.addEndScreen || false,
+        endScreenDuration: options.endScreenDuration || 10,
       });
 
       // 4단계: 병합된 음성 파일 삭제 (정리)
@@ -217,13 +223,28 @@ export class VideoService {
   private async generateVideo(
     audioPath: string,
     outputPath: string,
-    dimensions: { width: number; height: number; backgroundImagePaths?: string[] },
+    dimensions: {
+      width: number;
+      height: number;
+      backgroundImagePaths?: string[];
+      addEndScreen?: boolean;
+      endScreenDuration?: number;
+    },
   ): Promise<void> {
     try {
       this.logger.debug('Generating video with FFmpeg');
 
-      // 음성 길이 측정 (영상 길이 결정)
+      // 음성 길이 측정
       const audioDuration = await this.getAudioDuration(audioPath);
+
+      // 엔딩 화면 추가 시 총 영상 길이 계산
+      const endScreenDuration = dimensions.addEndScreen ? (dimensions.endScreenDuration || 10) : 0;
+      const totalVideoDuration = audioDuration + endScreenDuration;
+
+      if (dimensions.addEndScreen) {
+        this.logger.debug(`Adding end screen: ${endScreenDuration} seconds (total duration: ${totalVideoDuration}s)`);
+      }
+
       const tempVideoPath = path.join(this.tempDir, `temp_video_${Date.now()}.mp4`);
 
       // 유효한 배경 이미지 필터링
@@ -234,23 +255,52 @@ export class VideoService {
       if (validImages.length > 0) {
         // 배경 이미지가 있는 경우: 슬라이드쇼 영상 생성
         this.logger.debug(`Creating video with ${validImages.length} background images`);
-        this.logger.debug(`Video duration: ${audioDuration} seconds`);
 
-        // 각 이미지의 표시 시간 계산 (균등 분배)
-        const durationPerImage = audioDuration / validImages.length;
-        this.logger.debug(`Duration per image: ${durationPerImage} seconds`);
-
-        // 각 이미지를 영상 세그먼트로 변환
         const segmentPaths: string[] = [];
-        for (let i = 0; i < validImages.length; i++) {
-          const segmentPath = await this.createImageSegment(
-            validImages[i],
-            durationPerImage,
-            i,
+
+        // 엔딩 화면 추가 시: 본편 이미지와 엔딩 화면 이미지를 분리 처리
+        if (dimensions.addEndScreen && endScreenDuration > 0) {
+          // 본편: 음성 길이만큼 이미지 균등 분배
+          const durationPerImage = audioDuration / validImages.length;
+          this.logger.debug(`Main content - Duration per image: ${durationPerImage} seconds`);
+
+          for (let i = 0; i < validImages.length; i++) {
+            const segmentPath = await this.createImageSegment(
+              validImages[i],
+              durationPerImage,
+              i,
+              dimensions.width,
+              dimensions.height,
+            );
+            segmentPaths.push(segmentPath);
+          }
+
+          // 엔딩 화면: 마지막 이미지를 엔딩 화면 길이만큼 표시
+          const endScreenImagePath = validImages[validImages.length - 1];
+          this.logger.debug(`Creating end screen segment: ${endScreenDuration} seconds`);
+          const endScreenSegmentPath = await this.createImageSegment(
+            endScreenImagePath,
+            endScreenDuration,
+            validImages.length, // 다음 인덱스
             dimensions.width,
             dimensions.height,
           );
-          segmentPaths.push(segmentPath);
+          segmentPaths.push(endScreenSegmentPath);
+        } else {
+          // 엔딩 화면 없음: 기존 방식대로 전체 영상 길이에 맞춰 균등 분배
+          const durationPerImage = audioDuration / validImages.length;
+          this.logger.debug(`Duration per image: ${durationPerImage} seconds`);
+
+          for (let i = 0; i < validImages.length; i++) {
+            const segmentPath = await this.createImageSegment(
+              validImages[i],
+              durationPerImage,
+              i,
+              dimensions.width,
+              dimensions.height,
+            );
+            segmentPaths.push(segmentPath);
+          }
         }
 
         // 모든 세그먼트를 하나의 영상으로 병합
@@ -262,9 +312,10 @@ export class VideoService {
         }
       } else {
         // 배경 이미지가 없는 경우: 검정색 화면 생성
-        this.logger.debug(`Creating black video of ${audioDuration} seconds`);
+        const videoDuration = dimensions.addEndScreen ? totalVideoDuration : audioDuration;
+        this.logger.debug(`Creating black video of ${videoDuration} seconds`);
 
-        const createBlackCmd = `ffmpeg -f lavfi -i color=c=black:s=${dimensions.width}x${dimensions.height}:r=25 -t ${audioDuration} -pix_fmt yuv420p -y "${tempVideoPath}"`;
+        const createBlackCmd = `ffmpeg -f lavfi -i color=c=black:s=${dimensions.width}x${dimensions.height}:r=25 -t ${videoDuration} -pix_fmt yuv420p -y "${tempVideoPath}"`;
         this.logger.debug(`Creating black video: ${createBlackCmd}`);
 
         try {
@@ -277,7 +328,17 @@ export class VideoService {
       }
 
       // 영상과 음성을 결합하여 최종 MP4 파일 생성
-      const combineCmd = `ffmpeg -i "${tempVideoPath}" -i "${audioPath}" -map 0:v -map 1:a -c:v copy -c:a aac -b:a 192k -y "${outputPath}"`;
+      let combineCmd: string;
+
+      if (dimensions.addEndScreen && endScreenDuration > 0) {
+        // 엔딩 화면이 있는 경우: 음성에 무음 추가하여 영상 길이에 맞춤
+        this.logger.debug(`Adding ${endScreenDuration}s silence to audio for end screen`);
+        combineCmd = `ffmpeg -i "${tempVideoPath}" -i "${audioPath}" -filter_complex "[1:a]apad=whole_dur=${totalVideoDuration}[a]" -map 0:v -map "[a]" -c:v copy -c:a aac -b:a 192k -shortest -y "${outputPath}"`;
+      } else {
+        // 엔딩 화면이 없는 경우: 기존 방식 그대로
+        combineCmd = `ffmpeg -i "${tempVideoPath}" -i "${audioPath}" -map 0:v -map 1:a -c:v copy -c:a aac -b:a 192k -y "${outputPath}"`;
+      }
+
       this.logger.debug(`Combining video and audio: ${combineCmd}`);
 
       try {

@@ -4,6 +4,7 @@ import * as https from 'https';
 import * as crypto from 'crypto';
 import * as fs from 'fs-extra';
 import * as path from 'path';
+import sharp from 'sharp';
 
 @Injectable()
 export class ImageSearchService {
@@ -72,10 +73,51 @@ export class ImageSearchService {
 
       await fs.writeFile(filepath, response.data);
 
+      // 연합뉴스 이미지의 경우 하단 100px 제거 (워터마크 제거)
+      if (imageUrl.includes('yna.co.kr')) {
+        this.logger.debug(`Cropping bottom 100px from Yonhap News image: ${filepath}`);
+        await this.cropBottomPixels(filepath, 100);
+      }
+
       this.logger.debug(`Image downloaded: ${filepath}`);
       return filepath;
     } catch (error) {
       this.logger.error('Failed to download image:', error.message);
+      throw error;
+    }
+  }
+
+  /**
+   * Crop bottom pixels from image (워터마크 제거)
+   * @param filepath - Path to image file
+   * @param pixelsToRemove - Number of pixels to remove from bottom
+   */
+  private async cropBottomPixels(filepath: string, pixelsToRemove: number): Promise<void> {
+    try {
+      const image = sharp(filepath);
+      const metadata = await image.metadata();
+
+      if (!metadata.width || !metadata.height) {
+        throw new Error('Unable to read image dimensions');
+      }
+
+      const newHeight = metadata.height - pixelsToRemove;
+
+      if (newHeight <= 0) {
+        throw new Error(`Image height (${metadata.height}px) is too small to remove ${pixelsToRemove}px`);
+      }
+
+      // Crop the image to exclude bottom pixels
+      await image
+        .extract({ left: 0, top: 0, width: metadata.width, height: newHeight })
+        .toFile(filepath + '.tmp');
+
+      // Replace original file with cropped version
+      await fs.move(filepath + '.tmp', filepath, { overwrite: true });
+
+      this.logger.debug(`Cropped ${pixelsToRemove}px from bottom of image: ${filepath} (${metadata.width}x${metadata.height} → ${metadata.width}x${newHeight})`);
+    } catch (error) {
+      this.logger.error(`Failed to crop image ${filepath}:`, error.message);
       throw error;
     }
   }
