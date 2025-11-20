@@ -56,7 +56,7 @@ export class ArticleScraperService {
       const html = await this.fetchHtml(url);
 
       // 기사 내용 파싱
-      const articleData = this.parseArticleContent(html);
+      const articleData = this.parseArticleContent(html, url);
 
       // 내용이 비어있으면 경고
       if (!articleData.content || articleData.content.length === 0) {
@@ -133,15 +133,16 @@ export class ArticleScraperService {
    * HTML에서 기사 내용을 파싱합니다
    *
    * @param html - HTML 문자열
+   * @param url - 기사 URL (언론사 판별용)
    * @returns 기사 데이터 (내용, 이미지 URL)
    *
    * 추출 우선순위:
    * 1. Fusion.globalContent (주 방법) - JavaScript 객체에서 구조화된 데이터 추출
    * 2. HTML 파싱 (대체 방법) - Cheerio로 HTML 태그에서 텍스트 추출
    */
-  private parseArticleContent(html: string): ArticleData {
+  private parseArticleContent(html: string, url: string): ArticleData {
     // 방법 1: Fusion.globalContent에서 추출 시도
-    const fusionData = this.extractFusionGlobalContent(html);
+    const fusionData = this.extractFusionGlobalContent(html, url);
     if (fusionData.content) {
       this.logger.debug('Successfully extracted content from Fusion.globalContent');
       return fusionData;
@@ -149,13 +150,14 @@ export class ArticleScraperService {
 
     // 방법 2: HTML 파싱으로 대체
     this.logger.debug('Fusion.globalContent not found, falling back to HTML parsing');
-    return this.parseHtmlContent(html);
+    return this.parseHtmlContent(html, url);
   }
 
   /**
    * Fusion.globalContent JavaScript 객체에서 기사 내용 및 이미지를 추출합니다
    *
    * @param html - HTML 문자열
+   * @param url - 기사 URL (언론사 판별용)
    * @returns 기사 데이터 (내용, 이미지 URL)
    *
    * 추출 프로세스:
@@ -163,12 +165,13 @@ export class ArticleScraperService {
    * 2. JSON 파싱
    * 3. content_elements 배열에서 텍스트 및 이미지 추출
    * 4. GIF 이미지 필터링 (FFmpeg와 호환되지 않음)
+   * 5. 연합뉴스의 경우 첫 번째 이미지 제외 (기자 얼굴 사진)
    *
    * content_elements 구조:
    * - type: 'text' -> content 필드에 텍스트
    * - type: 'image' -> url 필드에 이미지 URL
    */
-  private extractFusionGlobalContent(html: string): ArticleData {
+  private extractFusionGlobalContent(html: string, url: string): ArticleData {
     try {
       // 정규식: Fusion.globalContent = {...};
       const regex = /Fusion\.globalContent\s*=\s*(\{[\s\S]*?\});/;
@@ -187,7 +190,7 @@ export class ArticleScraperService {
       }
 
       const contentParts: string[] = [];
-      const imageUrls: string[] = [];
+      let imageUrls: string[] = [];
 
       // content_elements 순회
       globalContent.content_elements.forEach((item: any) => {
@@ -211,6 +214,12 @@ export class ArticleScraperService {
         }
       });
 
+      // 연합뉴스의 경우 첫 번째 이미지 제외 (기자 얼굴 사진)
+      if (url.includes('yna.co.kr') && imageUrls.length > 0) {
+        this.logger.debug(`Skipping first image for Yonhap News (reporter photo): ${imageUrls[0]}`);
+        imageUrls = imageUrls.slice(1);
+      }
+
       this.logger.debug(`Extracted ${contentParts.length} text parts and ${imageUrls.length} images from Fusion.globalContent`);
 
       return {
@@ -227,13 +236,15 @@ export class ArticleScraperService {
    * Cheerio를 사용하여 HTML에서 기사 내용을 파싱합니다 (대체 방법)
    *
    * @param html - HTML 문자열
+   * @param url - 기사 URL (언론사 판별용)
    * @returns 기사 데이터 (내용, 이미지 URL)
    *
    * 추출 방법:
    * - 다중 언론사 셀렉터 지원
    * - 조선일보, 한겨레, 연합뉴스 등 각 언론사별 HTML 구조 대응
+   * - 연합뉴스의 경우 첫 번째 이미지 제외 (기자 얼굴 사진)
    */
-  private parseHtmlContent(html: string): ArticleData {
+  private parseHtmlContent(html: string, url: string): ArticleData {
     const $ = cheerio.load(html);
 
     // 다중 언론사 셀렉터 (우선순위 순서)
@@ -259,7 +270,7 @@ export class ArticleScraperService {
     ];
 
     const paragraphs: string[] = [];
-    const imageUrls: string[] = [];
+    let imageUrls: string[] = [];
 
     // 각 셀렉터를 순차적으로 시도
     for (const selector of contentSelectors) {
@@ -277,13 +288,16 @@ export class ArticleScraperService {
     }
 
     // 이미지 추출 시도
-    const imageSelectors = [
-      '.article-text img',
-      '.text img',
-      'article img',
-      '.article-content img',
-      '#article-body img',
-    ];
+    // 뉴시스의 경우 article_photo 클래스 내부의 이미지만 추출
+    const imageSelectors = url.includes('newsis.com')
+      ? ['.article_photo img']
+      : [
+          '.article-text img',
+          '.text img',
+          'article img',
+          '.article-content img',
+          '#article-body img',
+        ];
 
     for (const selector of imageSelectors) {
       $(selector).each((_, element) => {
@@ -300,6 +314,12 @@ export class ArticleScraperService {
       if (imageUrls.length > 0) {
         break;
       }
+    }
+
+    // 연합뉴스의 경우 첫 번째 이미지 제외 (기자 얼굴 사진)
+    if (url.includes('yna.co.kr') && imageUrls.length > 0) {
+      this.logger.debug(`Skipping first image for Yonhap News (reporter photo): ${imageUrls[0]}`);
+      imageUrls = imageUrls.slice(1);
     }
 
     if (paragraphs.length === 0) {

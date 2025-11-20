@@ -237,6 +237,7 @@ export class NewsService {
 
       return items
         .filter((item) => item && item.title && item.link) // 필수 필드 검증
+        .filter((item) => !this.isBreakingNewsDuplicate(item.title)) // 속보/x보 제목 제외
         .map((item: RssItem) => this.mapToNewsItemDto(item, source, category)) // DTO 변환
         .filter((newsItem) => this.isTodayKST(newsItem.pubDate, todayKST)); // 오늘 날짜 필터링
     } catch (error) {
@@ -386,7 +387,7 @@ export class NewsService {
    *
    * 제거 항목:
    * - HTML 태그 (<tag>)
-   * - HTML 엔티티 (&nbsp;, &amp;, &lt;, &gt;, &quot;)
+   * - HTML 엔티티 (&nbsp;, &amp;, &lt;, &gt;, &quot;, &#39;, &apos;)
    * - 앞뒤 공백
    */
   private cleanText(text: string): string {
@@ -397,6 +398,33 @@ export class NewsService {
       .replace(/&lt;/g, '<')        // < 엔티티 변환
       .replace(/&gt;/g, '>')        // > 엔티티 변환
       .replace(/&quot;/g, '"')      // " 엔티티 변환
+      .replace(/&#39;/g, "'")       // ' 숫자 엔티티 변환
+      .replace(/&apos;/g, "'")      // ' 엔티티 변환
+      .replace(/&#x27;/g, "'")      // ' 16진수 엔티티 변환
+      .replace(/&#(\d+);/g, (_, dec) => String.fromCharCode(dec)) // 기타 숫자 엔티티
       .trim();                       // 앞뒤 공백 제거
+  }
+
+  /**
+   * 속보/x보 제목인지 확인합니다
+   *
+   * @param title - 뉴스 제목
+   * @returns 속보/x보 제목이면 true
+   *
+   * 필터링 패턴:
+   * - "속보", "긴급", "단독" 등의 접두사
+   * - "1보", "2보", "3보", "4보", ... "n보" 형식
+   * - "[속보]", "[단독]", "[긴급]" 등의 대괄호 형식
+   */
+  private isBreakingNewsDuplicate(title: string): boolean {
+    // 속보/x보 패턴 매칭
+    const breakingNewsPattern = /(\[?속보\]?|\[?긴급\]?|\[?단독\]?|[0-9]+보)/;
+    const hasPattern = breakingNewsPattern.test(title);
+
+    if (hasPattern) {
+      this.logger.debug(`Breaking news title filtered: ${title}`);
+    }
+
+    return hasPattern;
   }
 }

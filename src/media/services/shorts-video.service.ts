@@ -181,24 +181,31 @@ export class ShortsVideoService {
       const wrappedTitle = this.wrapText(title, 20);
       const escapedTitle = this.escapeFFmpegText(wrappedTitle);
 
+      // 제목 줄 수 계산 (줄바꿈 문자 개수 + 1)
+      const titleLineCount = (wrappedTitle.match(/\n/g) || []).length + 1;
+
+      // 하이라이트 바 높이 동적 계산
+      // 60px + (줄 수 * 60px)
+      const highlightBarHeight = 60 + (titleLineCount * 60);
+
       // FFmpeg 필터 체인 구성
       const videoFilters = [
         // 이미지를 세로 화면에 맞게 스케일 (비율 유지, 검은 배경 패딩)
         `scale=1080:1920:force_original_aspect_ratio=decrease`,
         `pad=1080:1920:(ow-iw)/2:(oh-ih)/2:black`,
 
-        // 빨간색 하이라이트 바 (롱폼 스타일)
-        `drawbox=x=60:y=100:w=8:h=120:color=red@1.0:t=fill`,
+        // 빨간색 하이라이트 바 (롱폼 스타일, 제목 길이에 따라 동적 높이)
+        `drawbox=x=60:y=220:w=8:h=${highlightBarHeight}:color=red@1.0:t=fill`,
 
         // YBC News 로고 텍스트
         `drawtext=fontfile=/System/Library/Fonts/AppleSDGothicNeo.ttc:text='YBC News':` +
         `fontcolor=white:fontsize=32:` +
-        `x=80:y=110`,
+        `x=80:y=230`,
 
         // 제목 자막 (YBC News 아래, 흰색 텍스트)
         `drawtext=fontfile=/System/Library/Fonts/AppleSDGothicNeo.ttc:text='${escapedTitle}':` +
         `fontcolor=white:fontsize=42:` +
-        `x=80:y=160:line_spacing=10`,
+        `x=80:y=280:line_spacing=10`,
       ];
 
       // 시간 동기화 자막 추가
@@ -212,7 +219,7 @@ export class ShortsVideoService {
           videoFilters.push(
             `drawtext=fontfile=/System/Library/Fonts/AppleSDGothicNeo.ttc:text='${escapedSubtitle}':` +
             `fontcolor=white:fontsize=36:box=1:boxcolor=black@0.7:boxborderw=6:` +
-            `x=(w-text_w)/2:y=h-th-200:line_spacing=8:` +
+            `x=(w-text_w)/2:y=h-th-550:line_spacing=8:` +
             `enable='between(t,${subtitle.startTime.toFixed(2)},${subtitle.endTime.toFixed(2)})'`
           );
         }
@@ -224,7 +231,7 @@ export class ShortsVideoService {
         videoFilters.push(
           `drawtext=fontfile=/System/Library/Fonts/AppleSDGothicNeo.ttc:text='${escapedScript}':` +
           `fontcolor=white:fontsize=36:box=1:boxcolor=black@0.7:boxborderw=6:` +
-          `x=(w-text_w)/2:y=h-th-200:line_spacing=8`
+          `x=(w-text_w)/2:y=h-th-550:line_spacing=8`
         );
       }
 
