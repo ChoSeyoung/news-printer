@@ -69,3 +69,6 @@ client_secret.json
 publish-result.json
 server.log
 server.pid
+
+# Database files
+data/
