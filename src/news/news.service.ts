@@ -388,6 +388,7 @@ export class NewsService {
    * 제거 항목:
    * - HTML 태그 (<tag>)
    * - HTML 엔티티 (&nbsp;, &amp;, &lt;, &gt;, &quot;, &#39;, &apos;)
+   * - 대괄호 안의 내용 ([세상 읽기], [특파원 칼럼], [건강한겨레] 등)
    * - 앞뒤 공백
    */
   private cleanText(text: string): string {
@@ -402,6 +403,8 @@ export class NewsService {
       .replace(/&apos;/g, "'")      // ' 엔티티 변환
       .replace(/&#x27;/g, "'")      // ' 16진수 엔티티 변환
       .replace(/&#(\d+);/g, (_, dec) => String.fromCharCode(dec)) // 기타 숫자 엔티티
+      .replace(/\[.*?\]/g, '')      // 대괄호 안의 내용 제거
+      .replace(/\s+/g, ' ')         // 연속된 공백을 하나로 축소
       .trim();                       // 앞뒤 공백 제거
   }
 
