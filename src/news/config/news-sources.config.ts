@@ -14,13 +14,14 @@ import { NewsSourceConfig } from '../interfaces/news-source.interface';
 export const NEWS_SOURCES: NewsSourceConfig = {
   /**
    * 조선일보 - 보수 성향 종합 일간지
+   * 기본 URL을 정치 RSS로 설정 (정치 전문 채널)
    */
   chosun: {
     id: 'chosun',
     name: '조선일보',
     nameEn: 'Chosun Ilbo',
     website: 'https://www.chosun.com',
-    rssUrl: 'https://www.chosun.com/arc/outboundfeeds/rss/?outputType=xml',
+    rssUrl: 'https://www.chosun.com/arc/outboundfeeds/rss/category/politics/?outputType=xml', // 기본을 정치로 변경
     politicalStance: 'conservative',
     type: 'general',
     enabled: true,
@@ -33,13 +34,14 @@ export const NEWS_SOURCES: NewsSourceConfig = {
 
   /**
    * 연합뉴스 - 중도 성향 통신사 (속보성)
+   * 기본 URL을 정치 RSS로 설정 (정치 전문 채널)
    */
   yonhap: {
     id: 'yonhap',
     name: '연합뉴스',
     nameEn: 'Yonhap News',
     website: 'https://www.yna.co.kr',
-    rssUrl: 'https://www.yna.co.kr/rss/news.xml',
+    rssUrl: 'https://www.yna.co.kr/rss/politics.xml', // 기본을 정치로 변경
     politicalStance: 'moderate',
     type: 'agency',
     enabled: true,
@@ -52,13 +54,14 @@ export const NEWS_SOURCES: NewsSourceConfig = {
 
   /**
    * 동아일보 - 보수 성향 종합 일간지
+   * 기본 URL을 정치 RSS로 설정 (정치 전문 채널)
    */
   donga: {
     id: 'donga',
     name: '동아일보',
     nameEn: 'Dong-A Ilbo',
     website: 'https://www.donga.com',
-    rssUrl: 'http://rss.donga.com/total.xml',
+    rssUrl: 'http://rss.donga.com/politics.xml', // 기본을 정치로 변경
     politicalStance: 'conservative',
     type: 'general',
     enabled: true,
@@ -71,13 +74,14 @@ export const NEWS_SOURCES: NewsSourceConfig = {
 
   /**
    * 한겨레 - 진보 성향 종합 일간지
+   * 기본 URL을 정치 RSS로 설정 (정치 전문 채널)
    */
   hani: {
     id: 'hani',
     name: '한겨레',
     nameEn: 'The Hankyoreh',
     website: 'https://www.hani.co.kr',
-    rssUrl: 'https://www.hani.co.kr/rss/',
+    rssUrl: 'https://www.hani.co.kr/rss/politics/', // 기본을 정치로 변경
     politicalStance: 'progressive',
     type: 'general',
     enabled: true,
@@ -90,13 +94,14 @@ export const NEWS_SOURCES: NewsSourceConfig = {
 
   /**
    * 뉴시스 - 중도 성향 통신사
+   * 기본 URL을 정치 RSS로 설정 (정치 전문 채널)
    */
   newsis: {
     id: 'newsis',
     name: '뉴시스',
     nameEn: 'Newsis',
     website: 'https://www.newsis.com',
-    rssUrl: 'https://www.newsis.com/RSS/allnews.xml',
+    rssUrl: 'https://www.newsis.com/RSS/politics.xml', // 기본을 정치로 변경
     politicalStance: 'moderate',
     type: 'agency',
     enabled: true,
@@ -109,13 +114,14 @@ export const NEWS_SOURCES: NewsSourceConfig = {
 
   /**
    * 한국경제 - 경제 전문지
+   * 기본 URL을 정치 RSS로 설정 (정치 전문 채널)
    */
   hankyung: {
     id: 'hankyung',
     name: '한국경제',
     nameEn: 'Korea Economic Daily',
     website: 'https://www.hankyung.com',
-    rssUrl: 'https://www.hankyung.com/feed/all-news',
+    rssUrl: 'https://www.hankyung.com/feed/politics', // 기본을 정치로 변경
     politicalStance: 'moderate',
     type: 'economic',
     enabled: true,
