@@ -13,14 +13,6 @@ export interface ScriptResponse {
 }
 
 /**
- * YouTube Shorts용 스크립트 응답 인터페이스
- */
-export interface ShortsScriptResponse {
-  /** Shorts 60초 스크립트 */
-  script: string;
-}
-
-/**
  * 썸네일 이미지 선택 결과 인터페이스
  */
 export interface ThumbnailImageSelection {

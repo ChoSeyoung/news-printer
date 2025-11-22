@@ -162,13 +162,6 @@ export function getEnabledNewsSources() {
 }
 
 /**
- * 특정 언론사 설정 가져오기
- */
-export function getNewsSource(sourceId: string) {
-  return NEWS_SOURCES[sourceId];
-}
-
-/**
  * 카테고리를 지원하는 언론사 목록 가져오기
  */
 export function getCategorySupportingSources() {
