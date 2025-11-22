@@ -16,30 +16,73 @@ export class ImageSearchService {
   }
 
   /**
-   * Download images from URLs (e.g., from RSS feed)
-   * @param imageUrls - Array of image URLs to download
-   * @returns Array of paths to downloaded images
+   * Download images from URLs or copy from local paths
+   * @param imageUrls - Array of image URLs or local file paths to process
+   * @returns Array of paths to downloaded/copied images
    */
   async downloadImagesFromUrls(imageUrls: string[]): Promise<string[]> {
     try {
-      this.logger.log(`Downloading ${imageUrls.length} images from RSS feed`);
+      this.logger.log(`Processing ${imageUrls.length} images`);
 
       const imagePaths: string[] = [];
       for (let i = 0; i < imageUrls.length; i++) {
         try {
-          const imagePath = await this.downloadImage(imageUrls[i], i);
-          imagePaths.push(imagePath);
+          const source = imageUrls[i];
+
+          // Check if it's a local file path (starts with / or contains /tmp/)
+          if (source.startsWith('/') || source.startsWith('./')) {
+            // Local file path - check if exists and copy/use directly
+            const localPath = await this.handleLocalFile(source, i);
+            if (localPath) {
+              imagePaths.push(localPath);
+            }
+          } else {
+            // Remote URL - download
+            const imagePath = await this.downloadImage(source, i);
+            imagePaths.push(imagePath);
+          }
         } catch (error) {
-          this.logger.warn(`Failed to download image from ${imageUrls[i]}:`, error.message);
+          this.logger.warn(`Failed to process image from ${imageUrls[i]}:`, error.message);
           // Continue with other images even if one fails
         }
       }
 
-      this.logger.log(`Successfully downloaded ${imagePaths.length} out of ${imageUrls.length} images from URLs`);
+      this.logger.log(`Successfully processed ${imagePaths.length} out of ${imageUrls.length} images`);
       return imagePaths;
     } catch (error) {
-      this.logger.error('Failed to download images from URLs:', error.message);
+      this.logger.error('Failed to process images:', error.message);
       return [];
+    }
+  }
+
+  /**
+   * Handle local file path - copy to temp directory
+   * @param localPath - Local file path
+   * @param index - Index for unique filename
+   * @returns Path to copied file in temp directory
+   */
+  private async handleLocalFile(localPath: string, index: number): Promise<string | null> {
+    try {
+      // Check if file exists
+      const exists = await fs.pathExists(localPath);
+      if (!exists) {
+        this.logger.warn(`Local file not found: ${localPath}`);
+        return null;
+      }
+
+      // Get file extension
+      const ext = path.extname(localPath) || '.jpg';
+      const filename = `local_${Date.now()}_${index}_${Math.random().toString(36).substr(2, 9)}${ext}`;
+      const destPath = path.join(this.tempDir, filename);
+
+      // Copy file to temp directory
+      await fs.copy(localPath, destPath);
+      this.logger.debug(`Local file copied: ${localPath} -> ${destPath}`);
+
+      return destPath;
+    } catch (error) {
+      this.logger.error(`Failed to handle local file ${localPath}:`, error.message);
+      return null;
     }
   }
 
@@ -73,9 +116,10 @@ export class ImageSearchService {
 
       await fs.writeFile(filepath, response.data);
 
-      // 연합뉴스 이미지의 경우 하단 100px 제거 (워터마크 제거)
-      if (imageUrl.includes('yna.co.kr')) {
-        this.logger.debug(`Cropping bottom 100px from Yonhap News image: ${filepath}`);
+      // 뉴스 이미지의 경우 하단 100px 제거 (워터마크 제거)
+      // 연합뉴스(yna.co.kr), 다음뉴스(daumcdn.net), 뉴시스(newsis.com)
+      if (imageUrl.includes('yna.co.kr') || imageUrl.includes('daumcdn.net') || imageUrl.includes('newsis.com')) {
+        this.logger.debug(`Cropping bottom 100px from image: ${filepath}`);
         await this.cropBottomPixels(filepath, 100);
       }
 

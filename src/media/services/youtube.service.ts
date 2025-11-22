@@ -450,4 +450,163 @@ export class YoutubeService {
       return false;
     }
   }
+
+  /**
+   * 채널의 모든 영상 목록 가져오기
+   *
+   * 현재 인증된 YouTube 채널의 모든 영상을 가져옵니다.
+   *
+   * @param maxResults - 최대 결과 개수 (기본값: 50)
+   * @returns 영상 목록 (제목, ID, 게시 시간)
+   */
+  async listMyVideos(maxResults: number = 50): Promise<Array<{id: string, title: string, publishedAt: string}>> {
+    try {
+      await this.initializeYoutubeClient();
+
+      // 먼저 자신의 채널 ID 가져오기
+      const channelResponse = await this.youtube.channels.list({
+        part: ['id'],
+        mine: true,
+      });
+
+      if (!channelResponse.data.items || channelResponse.data.items.length === 0) {
+        this.logger.warn('No channel found for authenticated user');
+        return [];
+      }
+
+      const channelId = channelResponse.data.items[0].id;
+
+      // 채널의 모든 영상 검색
+      const searchResponse = await this.youtube.search.list({
+        part: ['snippet'],
+        channelId: channelId!,
+        maxResults: maxResults,
+        order: 'date', // 최신순으로 정렬
+        type: ['video'],
+      });
+
+      if (!searchResponse.data.items || searchResponse.data.items.length === 0) {
+        this.logger.log('No videos found on channel');
+        return [];
+      }
+
+      const videos = searchResponse.data.items.map(item => ({
+        id: item.id?.videoId || '',
+        title: item.snippet?.title || '',
+        publishedAt: item.snippet?.publishedAt || '',
+      })).filter(v => v.id); // ID가 있는 것만 필터링
+
+      this.logger.log(`Found ${videos.length} videos on channel`);
+      return videos;
+    } catch (error) {
+      this.logger.error('Failed to list videos:', error.message);
+      return [];
+    }
+  }
+
+  /**
+   * 중복 영상 찾기 및 삭제
+   *
+   * 제목이 동일한 중복 영상을 찾아서 가장 최근 것을 삭제합니다.
+   * 롱폼과 숏츠를 구분하여 각각 처리합니다.
+   *
+   * @returns 삭제된 영상 정보
+   */
+  async removeDuplicateVideos(): Promise<{
+    totalVideos: number;
+    duplicatesFound: number;
+    deleted: Array<{id: string, title: string, publishedAt: string}>;
+    errors: Array<{id: string, title: string, error: string}>;
+  }> {
+    try {
+      this.logger.log('Starting duplicate video removal process');
+
+      // 1. 모든 영상 가져오기
+      const allVideos = await this.listMyVideos(100);
+      this.logger.log(`Total videos found: ${allVideos.length}`);
+
+      if (allVideos.length === 0) {
+        return {
+          totalVideos: 0,
+          duplicatesFound: 0,
+          deleted: [],
+          errors: [],
+        };
+      }
+
+      // 2. 제목별로 그룹화
+      const videosByTitle = new Map<string, Array<{id: string, title: string, publishedAt: string}>>();
+
+      for (const video of allVideos) {
+        const title = video.title;
+        if (!videosByTitle.has(title)) {
+          videosByTitle.set(title, []);
+        }
+        videosByTitle.get(title)!.push(video);
+      }
+
+      // 3. 중복 찾기 (제목이 같은 영상이 2개 이상)
+      const duplicateGroups: Array<Array<{id: string, title: string, publishedAt: string}>> = [];
+
+      for (const [title, videos] of videosByTitle.entries()) {
+        if (videos.length > 1) {
+          this.logger.log(`Found ${videos.length} duplicates for title: "${title}"`);
+          duplicateGroups.push(videos);
+        }
+      }
+
+      if (duplicateGroups.length === 0) {
+        this.logger.log('No duplicate videos found');
+        return {
+          totalVideos: allVideos.length,
+          duplicatesFound: 0,
+          deleted: [],
+          errors: [],
+        };
+      }
+
+      // 4. 각 그룹에서 가장 최근 영상 삭제 (오래된 것은 유지)
+      const deleted: Array<{id: string, title: string, publishedAt: string}> = [];
+      const errors: Array<{id: string, title: string, error: string}> = [];
+
+      for (const group of duplicateGroups) {
+        // 게시 시간으로 정렬 (최신순)
+        group.sort((a, b) => new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime());
+
+        // 가장 최근 영상 (첫 번째 = 가장 최신)을 삭제
+        const mostRecent = group[0];
+
+        this.logger.log(`Deleting most recent duplicate: ${mostRecent.title} (${mostRecent.id}) published at ${mostRecent.publishedAt}`);
+
+        const success = await this.deleteVideo(mostRecent.id);
+
+        if (success) {
+          deleted.push(mostRecent);
+          this.logger.log(`✅ Deleted: ${mostRecent.title} (${mostRecent.id})`);
+        } else {
+          errors.push({
+            id: mostRecent.id,
+            title: mostRecent.title,
+            error: 'Failed to delete video',
+          });
+          this.logger.error(`❌ Failed to delete: ${mostRecent.title} (${mostRecent.id})`);
+        }
+
+        // YouTube API rate limit 방지를 위해 약간의 지연
+        await new Promise(resolve => setTimeout(resolve, 500));
+      }
+
+      this.logger.log(`Duplicate removal completed: ${deleted.length} deleted, ${errors.length} errors`);
+
+      return {
+        totalVideos: allVideos.length,
+        duplicatesFound: duplicateGroups.reduce((sum, group) => sum + group.length, 0),
+        deleted,
+        errors,
+      };
+    } catch (error) {
+      this.logger.error('Failed to remove duplicate videos:', error.message);
+      throw error;
+    }
+  }
 }

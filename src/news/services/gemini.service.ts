@@ -47,6 +47,12 @@ export class GeminiService {
   private readonly genAI: GoogleGenerativeAI;
   private readonly model;
 
+  // Rate limiting: 분당 15요청 제한 (Free tier)
+  private readonly MAX_REQUESTS_PER_MINUTE = 14; // 여유 있게 14로 설정
+  private readonly MIN_REQUEST_INTERVAL_MS = 4500; // 최소 4.5초 간격
+  private lastRequestTime = 0;
+  private requestQueue: Promise<void> = Promise.resolve();
+
   constructor(private configService: ConfigService) {
     // Gemini API 키 가져오기
     const apiKey = this.configService.get<string>('GEMINI_API_KEY');
@@ -80,6 +86,47 @@ export class GeminiService {
    * - TTS에 적합한 자연스러운 문체
    * - 기자 멘트 생략 ("어디서 전달드렸습니다" 등)
    */
+  /**
+   * Rate limiting을 적용하여 API 요청 전 대기
+   */
+  private async waitForRateLimit(): Promise<void> {
+    const now = Date.now();
+    const timeSinceLastRequest = now - this.lastRequestTime;
+    const waitTime = Math.max(0, this.MIN_REQUEST_INTERVAL_MS - timeSinceLastRequest);
+
+    if (waitTime > 0) {
+      this.logger.debug(`Rate limiting: waiting ${waitTime}ms before next request`);
+      await new Promise((resolve) => setTimeout(resolve, waitTime));
+    }
+
+    this.lastRequestTime = Date.now();
+  }
+
+  /**
+   * 429 에러 시 재시도 로직 포함 API 호출
+   */
+  private async callWithRetry(prompt: string, maxRetries = 3): Promise<string> {
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
+      try {
+        await this.waitForRateLimit();
+        const result = await this.model.generateContent(prompt);
+        return result.response.text();
+      } catch (error: any) {
+        const is429 = error?.message?.includes('429') || error?.status === 429;
+
+        if (is429 && attempt < maxRetries - 1) {
+          // 429 에러 시 지수 백오프로 재시도
+          const backoffTime = Math.min(60000, (attempt + 1) * 15000); // 15s, 30s, 45s (최대 60s)
+          this.logger.warn(`Rate limit hit, retrying in ${backoffTime / 1000}s (attempt ${attempt + 1}/${maxRetries})`);
+          await new Promise((resolve) => setTimeout(resolve, backoffTime));
+        } else {
+          throw error;
+        }
+      }
+    }
+    throw new Error('Max retries exceeded');
+  }
+
   async generateScripts(content: string): Promise<ScriptResponse> {
     try {
       this.logger.debug('Generating scripts with Gemini API');
@@ -87,10 +134,8 @@ export class GeminiService {
       // 프롬프트 생성
       const prompt = this.buildPrompt(content);
 
-      // Gemini API 호출
-      const result = await this.model.generateContent(prompt);
-      const response = result.response;
-      const text = response.text();
+      // Rate limiting + 재시도 로직 적용 API 호출
+      const text = await this.callWithRetry(prompt);
 
       this.logger.debug(`Received response from Gemini: ${text.substring(0, 100)}...`);
 
@@ -225,10 +270,8 @@ ${truncatedContent}`;
 
 0-${imageCount - 1}번 중 클릭유도력 높은 이미지 선택.`;
 
-      // Gemini API 호출
-      const result = await this.model.generateContent(prompt);
-      const response = result.response;
-      const text = response.text();
+      // Rate limiting + 재시도 로직 적용 API 호출
+      const text = await this.callWithRetry(prompt);
 
       this.logger.debug(`Received thumbnail selection: ${text}`);
 
@@ -316,10 +359,8 @@ ${truncatedContent}`;
       // Shorts 프롬프트 생성
       const prompt = this.buildShortsPrompt(title, content);
 
-      // Gemini API 호출
-      const result = await this.model.generateContent(prompt);
-      const response = result.response;
-      const text = response.text();
+      // Rate limiting + 재시도 로직 적용 API 호출
+      const text = await this.callWithRetry(prompt);
 
       this.logger.debug(`Received Shorts script from Gemini: ${text.substring(0, 100)}...`);
 

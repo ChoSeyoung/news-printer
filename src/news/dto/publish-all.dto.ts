@@ -6,6 +6,8 @@ export class PublishAllDto {
   shortsLimit?: number;
   /** 롱폼 업로드 비활성화 (true = Shorts만 업로드) */
   shortsOnly?: boolean;
+  /** 특정 언론사만 필터링 (예: 'sbs', 'chosun', 'yonhap') */
+  source?: string;
 }
 
 export interface PublishAllResultItem {

@@ -1,6 +1,7 @@
-import { Controller, Post, Get, Body, Param, Query, HttpException, HttpStatus, Logger } from '@nestjs/common';
+import { Controller, Post, Get, Body, Param, Query, HttpException, HttpStatus, Logger, Delete } from '@nestjs/common';
 import { MediaPipelineService } from './services/media-pipeline.service';
 import { AnalyticsService } from './services/analytics.service';
+import { YoutubeService } from './services/youtube.service';
 import { PublishNewsDto, PublishNewsResponseDto } from './dto/publish-news.dto';
 
 @Controller('media')
@@ -10,6 +11,7 @@ export class MediaController {
   constructor(
     private readonly mediaPipeline: MediaPipelineService,
     private readonly analyticsService: AnalyticsService,
+    private readonly youtubeService: YoutubeService,
   ) {}
 
   @Post('publish')
@@ -164,6 +166,41 @@ export class MediaController {
       this.logger.error('Failed to get high-performing videos:', error.message);
       throw new HttpException(
         `Failed to get high-performing videos: ${error.message}`,
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
+  /**
+   * YouTube 중복 영상 제거
+   *
+   * 제목이 동일한 중복 영상을 찾아서 가장 최근 것을 삭제합니다.
+   * 오래된 영상은 유지하고, 최신 업로드만 삭제합니다.
+   *
+   * @returns 삭제된 영상 정보
+   */
+  @Delete('youtube/duplicates')
+  async removeDuplicateVideos() {
+    try {
+      this.logger.log('Starting duplicate video removal');
+      const result = await this.youtubeService.removeDuplicateVideos();
+
+      return {
+        success: true,
+        message: `Removed ${result.deleted.length} duplicate videos`,
+        summary: {
+          totalVideos: result.totalVideos,
+          duplicatesFound: result.duplicatesFound,
+          deletedCount: result.deleted.length,
+          errorCount: result.errors.length,
+        },
+        deleted: result.deleted,
+        errors: result.errors,
+      };
+    } catch (error) {
+      this.logger.error('Failed to remove duplicate videos:', error.message);
+      throw new HttpException(
+        `Failed to remove duplicate videos: ${error.message}`,
         HttpStatus.INTERNAL_SERVER_ERROR,
       );
     }

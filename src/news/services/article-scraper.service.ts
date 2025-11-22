@@ -251,6 +251,12 @@ export class ArticleScraperService {
     const contentSelectors = [
       // 조선일보
       '.article-body__content-text',
+      // SBS 뉴스 - text_area 내부의 텍스트를 직접 추출 (p 태그 없이 br로 구분)
+      '.text_area[itemprop="articleBody"]',
+      '.text_area',
+      '.main_text',
+      '.article_cont_area',
+      '.w_article_cont',
       // 한겨레
       '.article-text p',
       '.text p',

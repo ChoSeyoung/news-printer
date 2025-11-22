@@ -118,9 +118,6 @@ export class MediaPipelineService {
         backgroundImagePaths = [];
       }
 
-      // Step 3: Create video from audio with background images
-      this.logger.log('Step 3/6: Creating video');
-
       // 롱폼 영상 여부 판단: 60초 이상이면 롱폼으로 간주
       // (쇼츠는 일반적으로 60초 미만)
       const totalCharacters = options.anchorScript.length + options.reporterScript.length;
@@ -128,18 +125,11 @@ export class MediaPipelineService {
       const isLongForm = estimatedDuration >= 60;
 
       if (isLongForm) {
-        this.logger.log(`Long-form video detected (estimated ${estimatedDuration}s) - adding 10s end screen`);
+        this.logger.log(`Long-form video detected (estimated ${estimatedDuration}s) - will use thumbnail as background`);
       }
 
-      videoPath = await this.videoService.createVideo({
-        audioFiles: [anchorPath, reporterPath],
-        backgroundImagePaths: backgroundImagePaths.length > 0 ? backgroundImagePaths : undefined,
-        addEndScreen: isLongForm, // 롱폼 영상에만 엔딩 화면 추가
-        endScreenDuration: 10, // 10초 엔딩 화면
-      });
-
-      // Step 4: Generate SEO-optimized metadata
-      this.logger.log('Step 4/6: Generating SEO metadata');
+      // Step 3: Generate SEO-optimized metadata (롱폼 영상은 썸네일을 먼저 생성하기 위해 순서 변경)
+      this.logger.log('Step 3/6: Generating SEO metadata');
       const seoMetadata = await this.seoOptimizerService.generateSeoMetadata({
         originalTitle: options.title,
         newsContent: options.newsContent,
@@ -151,8 +141,8 @@ export class MediaPipelineService {
       this.logger.debug(`SEO tags count: ${seoMetadata.tags.length}`);
       this.logger.debug(`Category ID: ${seoMetadata.categoryId}`);
 
-      // Step 5: Generate thumbnail with AI-selected background image
-      this.logger.log('Step 5/6: Generating thumbnail');
+      // Step 4: Generate thumbnail with AI-selected background image (비디오 생성 전에 썸네일 생성)
+      this.logger.log('Step 4/6: Generating thumbnail');
 
       // SEO 메타데이터의 category 한글로 변환
       const categoryMap: Record<string, string> = {
@@ -185,6 +175,25 @@ export class MediaPipelineService {
         category: category,
         date: new Date(),
         backgroundImagePath: selectedImagePath,
+      });
+
+      // Step 5: Create video from audio (롱폼 영상은 썸네일 사용, 쇼츠는 기존 이미지 사용)
+      this.logger.log('Step 5/6: Creating video');
+
+      // 롱폼 영상은 썸네일을 배경으로 사용
+      const videoBackgroundImages = isLongForm
+        ? (thumbnailPath ? [thumbnailPath] : undefined)
+        : (backgroundImagePaths.length > 0 ? backgroundImagePaths : undefined);
+
+      if (isLongForm && thumbnailPath) {
+        this.logger.log('Using generated thumbnail as background for long-form video');
+      }
+
+      videoPath = await this.videoService.createVideo({
+        audioFiles: [anchorPath, reporterPath],
+        backgroundImagePaths: videoBackgroundImages,
+        addEndScreen: isLongForm, // 롱폼 영상에만 엔딩 화면 추가
+        endScreenDuration: 10, // 10초 엔딩 화면
       });
 
       this.logger.debug(`Thumbnail created: ${thumbnailPath}`);

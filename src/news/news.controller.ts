@@ -5,6 +5,7 @@ import { PublishAllDto, PublishAllResponseDto, PublishAllResultItem } from './dt
 import { NewsPreviewDto, NewsPreviewResponseDto, NewsPreviewItem } from './dto/news-preview.dto';
 import { MediaPipelineService } from '../media/services/media-pipeline.service';
 import { ShortsPipelineService } from '../media/services/shorts-pipeline.service';
+import { DaumNewsScheduleService } from './services/daum-news-schedule.service';
 
 @Controller('news')
 export class NewsController {
@@ -14,6 +15,7 @@ export class NewsController {
     private readonly newsService: NewsService,
     private readonly mediaPipeline: MediaPipelineService,
     private readonly shortsPipeline: ShortsPipelineService,
+    private readonly daumNewsSchedule: DaumNewsScheduleService,
   ) {}
 
   @Get()
@@ -85,11 +87,14 @@ export class NewsController {
       const privacyStatus = dto.privacyStatus || 'public';
       const includeShorts = dto.shortsLimit !== 0 || dto.shortsOnly === true;
       const shortsOnly = dto.shortsOnly === true;
+      const sourceFilter = dto.source;
 
-      this.logger.log(`Publishing all news: category=${category}, limit=${limit}, includeShorts=${includeShorts}, shortsOnly=${shortsOnly}`);
+      this.logger.log(`Publishing all news: category=${category}, limit=${limit}, source=${sourceFilter || 'all'}, includeShorts=${includeShorts}, shortsOnly=${shortsOnly}`);
 
       // Step 1: Fetch news with full content and scripts
-      const newsItems = await this.newsService.fetchNews(category, limit, true);
+      // source 필터가 있으면 더 많이 가져온 후 필터링, 없으면 limit 적용
+      const fetchLimit = sourceFilter ? 200 : limit;
+      const newsItems = await this.newsService.fetchNews(category, fetchLimit, true);
 
       if (!newsItems || newsItems.length === 0) {
         return {
@@ -101,9 +106,23 @@ export class NewsController {
       }
 
       // Step 2: Filter items that have all required fields
-      const publishableItems = newsItems.filter(
+      let publishableItems = newsItems.filter(
         (item) => item.fullContent && item.anchor && item.reporter,
       );
+
+      // Step 2.5: Filter by source if specified
+      if (sourceFilter) {
+        publishableItems = publishableItems.filter(
+          (item) => item.source.id === sourceFilter,
+        );
+        this.logger.log(`Filtered to ${publishableItems.length} items from source: ${sourceFilter}`);
+
+        // source 필터 후 limit 적용
+        if (publishableItems.length > limit) {
+          publishableItems = publishableItems.slice(0, limit);
+          this.logger.log(`Applied limit: ${limit} items`);
+        }
+      }
 
       this.logger.log(
         `Found ${publishableItems.length} publishable items out of ${newsItems.length}`,
@@ -342,6 +361,27 @@ export class NewsController {
 
       throw new HttpException(
         `Failed to generate preview: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
+  /**
+   * 다음 뉴스 수동 트리거 (대통령실/국회)
+   * @param limit - 각 카테고리별 기사 수 (기본: 100)
+   */
+  @Post('daum/trigger')
+  async triggerDaumNews(
+    @Query('limit') limit?: string,
+  ): Promise<{ success: number; failed: number }> {
+    try {
+      const limitNumber = limit ? parseInt(limit, 10) : 100;
+      this.logger.log(`Manual Daum News trigger: limit=${limitNumber}`);
+      return await this.daumNewsSchedule.triggerManually(limitNumber);
+    } catch (error) {
+      this.logger.error('Failed to trigger Daum News:', error);
+      throw new HttpException(
+        `Failed to trigger Daum News: ${error instanceof Error ? error.message : 'Unknown error'}`,
         HttpStatus.INTERNAL_SERVER_ERROR,
       );
     }

@@ -3,13 +3,14 @@ import { NewsSourceConfig } from '../interfaces/news-source.interface';
 /**
  * 뉴스 출처 설정
  *
- * 균형 구성 (6개 언론사):
+ * 균형 구성 (7개 언론사):
  * 1. 조선일보 - 보수 성향, 종합 일간지
  * 2. 동아일보 - 보수 성향, 종합 일간지
  * 3. 연합뉴스 - 중도 성향, 통신사 (속보성 강함)
  * 4. 뉴시스 - 중도 성향, 통신사 (속보성 강함)
- * 5. 한겨레 - 진보 성향, 종합 일간지
- * 6. 한국경제 - 경제 전문지
+ * 5. SBS 뉴스 - 중도 성향, 방송사
+ * 6. 한겨레 - 진보 성향, 종합 일간지
+ * 7. 한국경제 - 경제 전문지
  */
 export const NEWS_SOURCES: NewsSourceConfig = {
   /**
@@ -109,6 +110,26 @@ export const NEWS_SOURCES: NewsSourceConfig = {
     parsingMethod: 'standard',
     categoryRssUrls: {
       politics: 'https://www.newsis.com/RSS/politics.xml',
+    },
+  },
+
+  /**
+   * SBS 뉴스 - 중도 성향 방송사
+   * 기본 URL을 정치 RSS로 설정 (정치 섹션)
+   */
+  sbs: {
+    id: 'sbs',
+    name: 'SBS 뉴스',
+    nameEn: 'SBS News',
+    website: 'https://news.sbs.co.kr',
+    rssUrl: 'https://news.sbs.co.kr/news/SectionRssFeed.do?sectionId=01', // 정치 섹션
+    politicalStance: 'moderate',
+    type: 'broadcasting',
+    enabled: true,
+    supportCategories: true,
+    parsingMethod: 'standard',
+    categoryRssUrls: {
+      politics: 'https://news.sbs.co.kr/news/SectionRssFeed.do?sectionId=01',
     },
   },
 

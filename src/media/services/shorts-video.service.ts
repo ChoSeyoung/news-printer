@@ -123,24 +123,36 @@ export class ShortsVideoService {
    * 텍스트를 지정된 너비에 맞게 줄바꿈
    * @param text 원본 텍스트
    * @param maxCharsPerLine 한 줄당 최대 문자 수
+   * @param maxLines 최대 줄 수 (기본값: 무제한)
    * @returns 줄바꿈된 텍스트
    */
-  private wrapText(text: string, maxCharsPerLine: number): string {
+  private wrapText(text: string, maxCharsPerLine: number, maxLines?: number): string {
     const words = text.split(' ');
     const lines: string[] = [];
     let currentLine = '';
 
     for (const word of words) {
+      // 최대 줄 수 제한 확인
+      if (maxLines && lines.length >= maxLines) {
+        break;
+      }
+
       if (currentLine.length + word.length + 1 <= maxCharsPerLine) {
         currentLine += (currentLine ? ' ' : '') + word;
       } else {
         if (currentLine) {
           lines.push(currentLine);
+          // 최대 줄 수 도달 시 중단
+          if (maxLines && lines.length >= maxLines) {
+            currentLine = '';
+            break;
+          }
         }
         // 단어가 너무 길면 강제 분할
         if (word.length > maxCharsPerLine) {
           let remaining = word;
           while (remaining.length > maxCharsPerLine) {
+            if (maxLines && lines.length >= maxLines) break;
             lines.push(remaining.substring(0, maxCharsPerLine));
             remaining = remaining.substring(maxCharsPerLine);
           }
@@ -151,7 +163,7 @@ export class ShortsVideoService {
       }
     }
 
-    if (currentLine) {
+    if (currentLine && (!maxLines || lines.length < maxLines)) {
       lines.push(currentLine);
     }
 
@@ -177,8 +189,9 @@ export class ShortsVideoService {
     subtitles?: SubtitleTiming[],
   ): Promise<void> {
     return new Promise((resolve, reject) => {
-      // 제목 텍스트 줄바꿈 처리
-      const wrappedTitle = this.wrapText(title, 20);
+      // 제목 텍스트 줄바꿈 처리 (최대 2줄, 영상 너비 고려)
+      // 영상 너비 1080px, x=80 여백, fontsize=42 → 한 줄당 약 18자로 제한
+      const wrappedTitle = this.wrapText(title, 18, 2);
       const escapedTitle = this.escapeFFmpegText(wrappedTitle);
 
       // 제목 줄 수 계산 (줄바꿈 문자 개수 + 1)
@@ -195,43 +208,44 @@ export class ShortsVideoService {
         `pad=1080:1920:(ow-iw)/2:(oh-ih)/2:black`,
 
         // 빨간색 하이라이트 바 (롱폼 스타일, 제목 길이에 따라 동적 높이)
-        `drawbox=x=60:y=220:w=8:h=${highlightBarHeight}:color=red@1.0:t=fill`,
+        `drawbox=x=60:y=270:w=8:h=${highlightBarHeight}:color=red@1.0:t=fill`,
 
         // YBC News 로고 텍스트
         `drawtext=fontfile=/System/Library/Fonts/AppleSDGothicNeo.ttc:text='YBC News':` +
         `fontcolor=white:fontsize=32:` +
-        `x=80:y=230`,
+        `x=80:y=280`,
 
         // 제목 자막 (YBC News 아래, 흰색 텍스트)
         `drawtext=fontfile=/System/Library/Fonts/AppleSDGothicNeo.ttc:text='${escapedTitle}':` +
         `fontcolor=white:fontsize=42:` +
-        `x=80:y=280:line_spacing=10`,
+        `x=80:y=330:line_spacing=10`,
       ];
 
-      // 시간 동기화 자막 추가
+      // 시간 동기화 자막 추가 (최대 2줄로 제한)
       if (subtitles && subtitles.length > 0) {
         // 각 문장에 대해 시간 기반 자막 추가
         for (const subtitle of subtitles) {
-          const wrappedSubtitle = this.wrapText(subtitle.text, 28);
+          // TTS와 조화롭게 최대 2줄로 제한
+          const wrappedSubtitle = this.wrapText(subtitle.text, 18, 2);
           const escapedSubtitle = this.escapeFFmpegText(wrappedSubtitle);
 
           // enable='between(t,start,end)'로 시간 구간에만 표시
           videoFilters.push(
             `drawtext=fontfile=/System/Library/Fonts/AppleSDGothicNeo.ttc:text='${escapedSubtitle}':` +
             `fontcolor=white:fontsize=36:box=1:boxcolor=black@0.7:boxborderw=6:` +
-            `x=(w-text_w)/2:y=h-th-550:line_spacing=8:` +
+            `x=(w-text_w)/2:y=h-th-500:line_spacing=8:` +
             `enable='between(t,${subtitle.startTime.toFixed(2)},${subtitle.endTime.toFixed(2)})'`
           );
         }
       } else {
-        // 자막 타이밍이 없으면 전체 스크립트를 고정 표시
-        const wrappedScript = this.wrapText(script, 28);
+        // 자막 타이밍이 없으면 전체 스크립트를 고정 표시 (최대 2줄)
+        const wrappedScript = this.wrapText(script, 18, 2);
         const escapedScript = this.escapeFFmpegText(wrappedScript);
 
         videoFilters.push(
           `drawtext=fontfile=/System/Library/Fonts/AppleSDGothicNeo.ttc:text='${escapedScript}':` +
           `fontcolor=white:fontsize=36:box=1:boxcolor=black@0.7:boxborderw=6:` +
-          `x=(w-text_w)/2:y=h-th-550:line_spacing=8`
+          `x=(w-text_w)/2:y=h-th-500:line_spacing=8`
         );
       }
 
