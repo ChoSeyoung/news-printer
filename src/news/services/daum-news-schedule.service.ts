@@ -128,10 +128,10 @@ export class DaumNewsScheduleService {
       this.logger.warn(`❌ Long-form Failed: ${article.title} - ${longformResult.error}`);
     }
 
-    // 3. Shorts 영상 생성 및 업로드
+    // 3. Shorts 영상 생성 및 업로드 (Reporter 스크립트 재사용)
     const shortsResult = await this.shortsPipeline.createAndUploadShorts({
       title: article.title,
-      newsContent: article.content,
+      reporterScript: scripts.reporter, // Reporter 대본 재사용 (Gemini API 절약)
       newsUrl: article.url,
       imageUrls: article.croppedImagePaths,
       privacyStatus: this.privacyStatus,

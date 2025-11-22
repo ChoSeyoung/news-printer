@@ -153,21 +153,11 @@ export class MediaPipelineService {
       };
       const category = categoryMap[seoMetadata.categoryId] || '사회';
 
-      // Gemini로 썸네일에 가장 적합한 이미지 선택
+      // 썸네일 이미지 선택 (첫 번째 이미지 사용)
       let selectedImagePath: string | undefined;
       if (backgroundImagePaths.length > 0) {
-        try {
-          const selectedIndex = await this.geminiService.selectBestThumbnailImage(
-            options.title,
-            options.newsContent,
-            backgroundImagePaths.length,
-          );
-          selectedImagePath = backgroundImagePaths[selectedIndex];
-          this.logger.debug(`Gemini selected image ${selectedIndex} for thumbnail: ${selectedImagePath}`);
-        } catch (error) {
-          this.logger.warn('Failed to select image with Gemini, using first image:', error.message);
-          selectedImagePath = backgroundImagePaths[0];
-        }
+        selectedImagePath = backgroundImagePaths[0];
+        this.logger.debug(`Using first image for thumbnail: ${selectedImagePath}`);
       }
 
       thumbnailPath = await this.thumbnailService.generateThumbnail({

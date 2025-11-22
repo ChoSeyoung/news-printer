@@ -116,11 +116,26 @@ export class ImageSearchService {
 
       await fs.writeFile(filepath, response.data);
 
-      // 뉴스 이미지의 경우 하단 100px 제거 (워터마크 제거)
-      // 연합뉴스(yna.co.kr), 다음뉴스(daumcdn.net), 뉴시스(newsis.com)
-      if (imageUrl.includes('yna.co.kr') || imageUrl.includes('daumcdn.net') || imageUrl.includes('newsis.com')) {
-        this.logger.debug(`Cropping bottom 100px from image: ${filepath}`);
-        await this.cropBottomPixels(filepath, 100);
+      // 뉴스 이미지의 경우 하단 워터마크 제거 (언론사별 다른 크기)
+      let cropPixels = 0;
+
+      if (imageUrl.includes('mt.co.kr') || imageUrl.includes('moneytoday.co.kr')) {
+        cropPixels = 50; // 머니투데이: 하단 50px 제거
+      } else if (imageUrl.includes('edaily.co.kr')) {
+        cropPixels = 60; // 이데일리: 하단 60px 제거
+      } else if (imageUrl.includes('thefact.co.kr')) {
+        cropPixels = 80; // 더 팩트: 하단 80px 제거
+      } else if (imageUrl.includes('yna.co.kr') || imageUrl.includes('yonhapnews.co.kr')) {
+        cropPixels = 100; // 연합뉴스: 하단 100px 제거
+      } else if (imageUrl.includes('news1.kr')) {
+        cropPixels = 150; // 뉴스1: 하단 150px 제거
+      } else if (imageUrl.includes('daumcdn.net') || imageUrl.includes('newsis.com')) {
+        cropPixels = 100; // 다음/뉴시스: 하단 100px 제거
+      }
+
+      if (cropPixels > 0) {
+        this.logger.debug(`Cropping bottom ${cropPixels}px from image: ${filepath}`);
+        await this.cropBottomPixels(filepath, cropPixels);
       }
 
       this.logger.debug(`Image downloaded: ${filepath}`);

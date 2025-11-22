@@ -14,8 +14,8 @@ export interface CreateShortsOptions {
   /** 뉴스 제목 */
   title: string;
 
-  /** 뉴스 본문 (60초 요약용) */
-  newsContent: string;
+  /** Reporter 대본 (Shorts 스크립트로 재사용) */
+  reporterScript: string;
 
   /** 뉴스 원문 URL */
   newsUrl?: string;
@@ -91,12 +91,9 @@ export class ShortsPipelineService {
     try {
       this.logger.log(`Starting Shorts creation: ${options.title}`);
 
-      // 1️⃣ Gemini AI로 60초 요약 스크립트 생성
-      this.logger.log('Step 1: Generating 60-second Shorts script with Gemini');
-      const shortsScript = await this.geminiService.generateShortsScript(
-        options.title,
-        options.newsContent,
-      );
+      // 1️⃣ Reporter 대본을 Shorts 스크립트로 재사용 (Gemini API 절약)
+      this.logger.log('Step 1: Using reporter script as Shorts script (no API call needed)');
+      const shortsScript = options.reporterScript;
 
       if (!shortsScript) {
         throw new Error('Failed to generate Shorts script');
