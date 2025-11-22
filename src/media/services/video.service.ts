@@ -600,8 +600,8 @@ export class VideoService {
       .replace(/\\/g, '\\\\\\\\\\\\\\\\')
       .replace(/'/g, "'\\\\'")
       .replace(/:/g, '\\\\:')
-      .replace(/\\[/g, '\\\\[')
-      .replace(/\\]/g, '\\\\]')
+      .replace(/\[/g, '\\\\[')
+      .replace(/\]/g, '\\\\]')
       .replace(/"/g, '\\\\"');
   }
 }
