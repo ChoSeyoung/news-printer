@@ -4,6 +4,7 @@ import * as fs from 'fs-extra';
 import * as path from 'path';
 import { exec } from 'child_process';
 import { promisify } from 'util';
+import { SubtitleTiming } from './tts.service';
 
 const execAsync = promisify(exec);
 
@@ -25,6 +26,12 @@ export interface VideoOptions {
   addEndScreen?: boolean;
   /** 엔딩 화면 길이 (초, 기본값: 10) */
   endScreenDuration?: number;
+  /** 뉴스 제목 (자막용, 선택사항) */
+  title?: string;
+  /** 뉴스 스크립트 (자막용, 선택사항) */
+  script?: string;
+  /** TTS 기반 자막 타이밍 정보 (선택사항) */
+  subtitles?: SubtitleTiming[];
 }
 
 /**
@@ -186,6 +193,9 @@ export class VideoService {
         backgroundImagePaths: options.backgroundImagePaths,
         addEndScreen: options.addEndScreen || false,
         endScreenDuration: options.endScreenDuration || 10,
+        title: options.title,
+        script: options.script,
+        subtitles: options.subtitles,
       });
 
       // 4단계: 병합된 음성 파일 삭제 (정리)
@@ -229,6 +239,9 @@ export class VideoService {
       backgroundImagePaths?: string[];
       addEndScreen?: boolean;
       endScreenDuration?: number;
+      title?: string;
+      script?: string;
+      subtitles?: SubtitleTiming[];
     },
   ): Promise<void> {
     try {
@@ -271,6 +284,9 @@ export class VideoService {
               i,
               dimensions.width,
               dimensions.height,
+              dimensions.title,
+              dimensions.script,
+              dimensions.subtitles,
             );
             segmentPaths.push(segmentPath);
           }
@@ -284,6 +300,9 @@ export class VideoService {
             validImages.length, // 다음 인덱스
             dimensions.width,
             dimensions.height,
+            dimensions.title,
+            dimensions.script,
+            dimensions.subtitles,
           );
           segmentPaths.push(endScreenSegmentPath);
         } else {
@@ -298,6 +317,9 @@ export class VideoService {
               i,
               dimensions.width,
               dimensions.height,
+              dimensions.title,
+              dimensions.script,
+              dimensions.subtitles,
             );
             segmentPaths.push(segmentPath);
           }
@@ -385,10 +407,66 @@ export class VideoService {
     index: number,
     width: number,
     height: number,
+    title?: string,
+    script?: string,
+    subtitles?: SubtitleTiming[],
   ): Promise<string> {
     const segmentPath = path.join(this.tempDir, `segment_${Date.now()}_${index}.mp4`);
 
-    const createSegmentCmd = `ffmpeg -framerate 25 -loop 1 -i "${imagePath}" -t ${duration} -vf "scale=${width}:${height}:force_original_aspect_ratio=increase,crop=${width}:${height}" -pix_fmt yuv420p -y "${segmentPath}"`;
+    // 기본 비디오 필터 (이미지 스케일링 및 크롭)
+    const videoFilters: string[] = [
+      `scale=${width}:${height}:force_original_aspect_ratio=increase`,
+      `crop=${width}:${height}`,
+    ];
+
+    // 자막 추가 (가로 영상용, Shorts와 다른 레이아웃)
+    if (subtitles && subtitles.length > 0 && title) {
+      // 제목 줄바꿈 처리 (가로 영상은 40자/줄, 최대 2줄)
+      const wrappedTitle = this.wrapText(title, 40, 2);
+      const escapedTitle = this.escapeFFmpegText(wrappedTitle);
+
+      // 제목 자막 추가 (상단 중앙, 가로 영상용)
+      videoFilters.push(
+        `drawtext=fontfile=/System/Library/Fonts/AppleSDGothicNeo.ttc:text='${escapedTitle}':` +
+        `fontcolor=white:fontsize=48:box=1:boxcolor=black@0.6:boxborderw=10:` +
+        `x=(w-text_w)/2:y=60:line_spacing=10`
+      );
+
+      // TTS 동기화 자막 추가 (하단 중앙)
+      for (const subtitle of subtitles) {
+        const wrappedSubtitle = this.wrapText(subtitle.text, 40, 2);
+        const escapedSubtitle = this.escapeFFmpegText(wrappedSubtitle);
+
+        videoFilters.push(
+          `drawtext=fontfile=/System/Library/Fonts/AppleSDGothicNeo.ttc:text='${escapedSubtitle}':` +
+          `fontcolor=white:fontsize=36:box=1:boxcolor=black@0.7:boxborderw=8:` +
+          `x=(w-text_w)/2:y=h-th-120:line_spacing=8:` +
+          `enable='between(t,${subtitle.startTime.toFixed(2)},${subtitle.endTime.toFixed(2)})'`
+        );
+      }
+    } else if (title && script) {
+      // 자막 타이밍이 없으면 제목과 스크립트를 고정 표시
+      const wrappedTitle = this.wrapText(title, 40, 2);
+      const escapedTitle = this.escapeFFmpegText(wrappedTitle);
+
+      videoFilters.push(
+        `drawtext=fontfile=/System/Library/Fonts/AppleSDGothicNeo.ttc:text='${escapedTitle}':` +
+        `fontcolor=white:fontsize=48:box=1:boxcolor=black@0.6:boxborderw=10:` +
+        `x=(w-text_w)/2:y=60:line_spacing=10`
+      );
+
+      const wrappedScript = this.wrapText(script, 40, 2);
+      const escapedScript = this.escapeFFmpegText(wrappedScript);
+
+      videoFilters.push(
+        `drawtext=fontfile=/System/Library/Fonts/AppleSDGothicNeo.ttc:text='${escapedScript}':` +
+        `fontcolor=white:fontsize=36:box=1:boxcolor=black@0.7:boxborderw=8:` +
+        `x=(w-text_w)/2:y=h-th-120:line_spacing=8`
+      );
+    }
+
+    const videoFilterStr = videoFilters.join(',');
+    const createSegmentCmd = `ffmpeg -framerate 25 -loop 1 -i "${imagePath}" -t ${duration} -vf "${videoFilterStr}" -pix_fmt yuv420p -y "${segmentPath}"`;
     this.logger.debug(`Creating segment ${index}: ${createSegmentCmd}`);
 
     try {
@@ -463,5 +541,67 @@ export class VideoService {
     } catch (error) {
       this.logger.warn(`Failed to delete video file ${filepath}:`, error.message);
     }
+  }
+
+  /**
+   * 텍스트를 지정된 너비에 맞게 줄바꿈
+   * @param text 원본 텍스트
+   * @param maxCharsPerLine 한 줄당 최대 문자 수
+   * @param maxLines 최대 줄 수 (기본값: 무제한)
+   * @returns 줄바꿈된 텍스트
+   */
+  private wrapText(text: string, maxCharsPerLine: number, maxLines?: number): string {
+    const words = text.split(' ');
+    const lines: string[] = [];
+    let currentLine = '';
+
+    for (const word of words) {
+      if (maxLines && lines.length >= maxLines) {
+        break;
+      }
+
+      if (currentLine.length + word.length + 1 <= maxCharsPerLine) {
+        currentLine += (currentLine ? ' ' : '') + word;
+      } else {
+        if (currentLine) {
+          lines.push(currentLine);
+          if (maxLines && lines.length >= maxLines) {
+            currentLine = '';
+            break;
+          }
+        }
+        if (word.length > maxCharsPerLine) {
+          let remaining = word;
+          while (remaining.length > maxCharsPerLine) {
+            if (maxLines && lines.length >= maxLines) break;
+            lines.push(remaining.substring(0, maxCharsPerLine));
+            remaining = remaining.substring(maxCharsPerLine);
+          }
+          currentLine = remaining;
+        } else {
+          currentLine = word;
+        }
+      }
+    }
+
+    if (currentLine && (!maxLines || lines.length < maxLines)) {
+      lines.push(currentLine);
+    }
+
+    return lines.join('\\n');
+  }
+
+  /**
+   * FFmpeg 텍스트 이스케이프
+   * 특수문자를 FFmpeg drawtext 필터에 맞게 변환
+   */
+  private escapeFFmpegText(text: string): string {
+    return text
+      .replace(/\\/g, '\\\\\\\\\\\\\\\\')
+      .replace(/'/g, "'\\\\'")
+      .replace(/:/g, '\\\\:')
+      .replace(/\\[/g, '\\\\[')
+      .replace(/\\]/g, '\\\\]')
+      .replace(/"/g, '\\\\"');
   }
 }
