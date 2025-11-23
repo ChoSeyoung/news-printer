@@ -5,6 +5,8 @@ import { ShortsVideoService } from './shorts-video.service';
 import { YoutubeService } from './youtube.service';
 import { SeoOptimizerService } from './seo-optimizer.service';
 import { ImageSearchService } from './image-search.service';
+import { FailedUploadStorageService } from './failed-upload-storage.service';
+import { TelegramNotificationService } from './telegram-notification.service';
 import { promises as fs } from 'fs';
 
 /**
@@ -72,6 +74,8 @@ export class ShortsPipelineService {
     private readonly youtubeService: YoutubeService,
     private readonly seoOptimizerService: SeoOptimizerService,
     private readonly imageSearchService: ImageSearchService,
+    private readonly failedUploadStorageService: FailedUploadStorageService,
+    private readonly telegramNotificationService: TelegramNotificationService,
   ) {}
 
   /**
@@ -182,6 +186,7 @@ export class ShortsPipelineService {
 
       // 5️⃣ YouTube Shorts 업로드
       this.logger.log('Step 5: Uploading to YouTube Shorts');
+
       const uploadResult = await this.youtubeService.uploadVideo({
         title: shortsTitle,
         description: shortsDescription,
@@ -191,14 +196,53 @@ export class ShortsPipelineService {
         categoryId: '25', // News & Politics 카테고리
       });
 
+      // YouTube API 할당량 초과 또는 업로드 실패 시 저장
       if (!uploadResult.success) {
-        throw new Error(`YouTube upload failed: ${uploadResult.error}`);
+        this.logger.error(`Upload failed: ${uploadResult.error}`);
+
+        // 업로드 실패 영상 저장
+        const saved = await this.failedUploadStorageService.saveFailedUpload(
+          videoPath!,
+          undefined, // Shorts는 썸네일 없음
+          {
+            title: shortsTitle,
+            description: shortsDescription,
+            tags: [...basicTags, 'Shorts', '60초뉴스', '숏폼'],
+            categoryId: '25',
+            privacyStatus: options.privacyStatus || 'public',
+            videoType: 'shorts',
+            failureReason: uploadResult.error || 'Unknown error',
+            newsUrl: options.newsUrl,
+          },
+        );
+
+        if (saved) {
+          this.logger.log('Failed Shorts upload saved to pending-uploads/shorts/');
+          // 원본 파일은 복사되었으므로 임시 파일만 정리
+          await this.cleanupTempFiles(audioPath, undefined, ...downloadedImagePaths);
+        } else {
+          // 저장 실패 시에만 영상 파일 유지
+          await this.cleanupTempFiles(audioPath, undefined, ...downloadedImagePaths);
+        }
+
+        return {
+          success: false,
+          error: `Upload failed and saved for retry: ${uploadResult.error}`,
+        };
       }
 
       const duration = ((Date.now() - startTime) / 1000).toFixed(1);
       this.logger.log(
         `✅ Shorts creation completed in ${duration}s: ${uploadResult.videoUrl}`,
       );
+
+      // Send Telegram notification
+      await this.telegramNotificationService.sendUploadSuccess({
+        title: options.title,
+        videoUrl: uploadResult.videoUrl!,
+        videoType: 'shorts',
+        uploadMethod: 'API',
+      });
 
       return {
         success: true,

@@ -13,6 +13,10 @@ import { PublishedNewsTrackingService } from './services/published-news-tracking
 import { AnalyticsService } from './services/analytics.service';
 import { ShortsVideoService } from './services/shorts-video.service';
 import { ShortsPipelineService } from './services/shorts-pipeline.service';
+import { FailedUploadStorageService } from './services/failed-upload-storage.service';
+import { YoutubeBrowserUploadService } from './services/youtube-browser-upload.service';
+import { TelegramNotificationService } from './services/telegram-notification.service';
+import { PendingUploadRetryService } from './services/pending-upload-retry.service';
 import { NewsModule } from '../news/news.module';
 
 @Module({
@@ -31,7 +35,11 @@ import { NewsModule } from '../news/news.module';
     AnalyticsService,
     ShortsVideoService,
     ShortsPipelineService,
+    FailedUploadStorageService,
+    YoutubeBrowserUploadService,
+    TelegramNotificationService,
+    PendingUploadRetryService,
   ],
-  exports: [MediaPipelineService, PublishedNewsTrackingService, ShortsPipelineService],
+  exports: [MediaPipelineService, PublishedNewsTrackingService, ShortsPipelineService, YoutubeBrowserUploadService, TelegramNotificationService, PendingUploadRetryService],
 })
 export class MediaModule {}

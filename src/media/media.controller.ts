@@ -2,6 +2,7 @@ import { Controller, Post, Get, Body, Param, Query, HttpException, HttpStatus, L
 import { MediaPipelineService } from './services/media-pipeline.service';
 import { AnalyticsService } from './services/analytics.service';
 import { YoutubeService } from './services/youtube.service';
+import { PendingUploadRetryService } from './services/pending-upload-retry.service';
 import { PublishNewsDto, PublishNewsResponseDto } from './dto/publish-news.dto';
 
 @Controller('media')
@@ -12,6 +13,7 @@ export class MediaController {
     private readonly mediaPipeline: MediaPipelineService,
     private readonly analyticsService: AnalyticsService,
     private readonly youtubeService: YoutubeService,
+    private readonly pendingUploadRetryService: PendingUploadRetryService,
   ) {}
 
   @Post('publish')
@@ -201,6 +203,123 @@ export class MediaController {
       this.logger.error('Failed to remove duplicate videos:', error.message);
       throw new HttpException(
         `Failed to remove duplicate videos: ${error.message}`,
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
+  /**
+   * pending-uploads 디렉토리의 모든 영상을 브라우저 자동화로 재업로드
+   *
+   * 백그라운드에서 비동기로 실행되며, 즉시 응답을 반환합니다.
+   * 업로드 진행 상황은 로그 또는 Telegram 알림으로 확인하세요.
+   *
+   * @returns 작업 시작 확인
+   */
+  @Post('retry-pending-uploads')
+  async retryPendingUploads() {
+    try {
+      this.logger.log('Starting pending uploads retry process in background');
+
+      // Get current stats before starting
+      const stats = await this.pendingUploadRetryService.getStatistics();
+
+      // Start the retry process in background (fire-and-forget)
+      this.pendingUploadRetryService.retryAllPendingUploads().then((result) => {
+        this.logger.log(
+          `Background retry completed: ${result.successCount} succeeded, ${result.failedCount} failed out of ${result.totalAttempted} total`
+        );
+      }).catch((error) => {
+        this.logger.error('Background retry process failed:', error.message);
+      });
+
+      return {
+        success: true,
+        message: 'Retry process started in background',
+        status: 'running',
+        pending: {
+          longformCount: stats.longformCount,
+          shortsCount: stats.shortsCount,
+          totalCount: stats.totalCount,
+        },
+        note: 'Process is running in background. Check logs or Telegram notifications for progress.',
+      };
+    } catch (error) {
+      this.logger.error('Failed to start retry process:', error.message);
+      throw new HttpException(
+        `Failed to start retry process: ${error.message}`,
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
+  /**
+   * pending-uploads 통계 조회
+   *
+   * @returns 대기 중인 업로드 통계
+   */
+  @Get('pending-uploads/stats')
+  async getPendingUploadsStats() {
+    try {
+      const stats = await this.pendingUploadRetryService.getStatistics();
+      return {
+        success: true,
+        data: stats,
+      };
+    } catch (error) {
+      this.logger.error('Failed to get pending uploads stats:', error.message);
+      throw new HttpException(
+        `Failed to get pending uploads stats: ${error.message}`,
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
+  /**
+   * 특정 타입(longform 또는 shorts)만 재업로드
+   *
+   * 백그라운드에서 비동기로 실행되며, 즉시 응답을 반환합니다.
+   *
+   * @param videoType - 재업로드할 영상 타입
+   * @returns 작업 시작 확인
+   */
+  @Post('retry-pending-uploads/:videoType')
+  async retryPendingUploadsByType(@Param('videoType') videoType: 'longform' | 'shorts') {
+    try {
+      if (videoType !== 'longform' && videoType !== 'shorts') {
+        throw new HttpException(
+          'Invalid video type. Must be "longform" or "shorts"',
+          HttpStatus.BAD_REQUEST,
+        );
+      }
+
+      this.logger.log(`Starting ${videoType} uploads retry process in background`);
+
+      // Get current stats
+      const stats = await this.pendingUploadRetryService.getStatistics();
+      const count = videoType === 'longform' ? stats.longformCount : stats.shortsCount;
+
+      // Start background process
+      this.pendingUploadRetryService.retryByType(videoType).then((result) => {
+        this.logger.log(
+          `Background ${videoType} retry completed: ${result.successCount} succeeded, ${result.failedCount} failed out of ${result.totalAttempted} total`
+        );
+      }).catch((error) => {
+        this.logger.error(`Background ${videoType} retry failed:`, error.message);
+      });
+
+      return {
+        success: true,
+        message: `${videoType} retry process started in background`,
+        status: 'running',
+        videoType,
+        pendingCount: count,
+        note: 'Process is running in background. Check logs or Telegram notifications for progress.',
+      };
+    } catch (error) {
+      this.logger.error(`Failed to start ${videoType} retry:`, error.message);
+      throw new HttpException(
+        `Failed to start ${videoType} retry: ${error.message}`,
         HttpStatus.INTERNAL_SERVER_ERROR,
       );
     }

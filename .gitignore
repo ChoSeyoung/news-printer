@@ -70,5 +70,8 @@ publish-result.json
 server.log
 server.pid
 
+# Failed upload storage (YouTube API quota exceeded)
+pending-uploads/
+
 # Database files
 data/

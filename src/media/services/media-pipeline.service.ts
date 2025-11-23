@@ -6,7 +6,9 @@ import { SeoOptimizerService } from './seo-optimizer.service';
 import { ThumbnailService } from './thumbnail.service';
 import { ImageSearchService } from './image-search.service';
 import { PublishedNewsTrackingService } from './published-news-tracking.service';
+import { FailedUploadStorageService } from './failed-upload-storage.service';
 import { GeminiService } from '../../news/services/gemini.service';
+import { TelegramNotificationService } from './telegram-notification.service';
 
 export interface PublishNewsOptions {
   title: string;
@@ -54,7 +56,9 @@ export class MediaPipelineService {
     private readonly thumbnailService: ThumbnailService,
     private readonly imageSearchService: ImageSearchService,
     private readonly publishedNewsTrackingService: PublishedNewsTrackingService,
+    private readonly failedUploadStorageService: FailedUploadStorageService,
     private readonly geminiService: GeminiService,
+    private readonly telegramNotificationService: TelegramNotificationService,
   ) {}
 
   /**
@@ -200,6 +204,42 @@ export class MediaPipelineService {
         thumbnailPath,
       });
 
+      // YouTube API 할당량 초과 또는 업로드 실패 시 저장
+      if (!uploadResult.success) {
+        this.logger.error(`Upload failed: ${uploadResult.error}`);
+
+        // 업로드 실패 영상 저장
+        const saved = await this.failedUploadStorageService.saveFailedUpload(
+          videoPath,
+          thumbnailPath || undefined,
+          {
+            title: seoMetadata.optimizedTitle,
+            description: seoMetadata.optimizedDescription,
+            tags: seoMetadata.tags,
+            categoryId: seoMetadata.categoryId,
+            privacyStatus: options.privacyStatus || 'unlisted',
+            videoType: 'longform',
+            failureReason: uploadResult.error || 'Unknown error',
+            newsUrl: options.newsUrl,
+          },
+        );
+
+        if (saved) {
+          this.logger.log('Failed longform upload saved to pending-uploads/longform/');
+          // 원본 파일은 복사되었으므로 임시 파일만 정리
+          await this.cleanup(anchorAudioPath, reporterAudioPath, null, null, ...backgroundImagePaths);
+        } else {
+          // 저장 실패 시에만 영상 파일 유지
+          await this.cleanup(anchorAudioPath, reporterAudioPath, null, thumbnailPath, ...backgroundImagePaths);
+        }
+
+        return {
+          success: false,
+          error: `Upload failed and saved for retry: ${uploadResult.error}`,
+          videoPath: saved ? undefined : videoPath,
+        };
+      }
+
       // Clean up temporary files (including background images)
       await this.cleanup(anchorAudioPath, reporterAudioPath, videoPath, thumbnailPath, ...backgroundImagePaths);
 
@@ -224,6 +264,14 @@ export class MediaPipelineService {
             uploadResult.videoUrl,
           );
         }
+
+        // Send Telegram notification
+        await this.telegramNotificationService.sendUploadSuccess({
+          title: options.title,
+          videoUrl: uploadResult.videoUrl!,
+          videoType: 'longform',
+          uploadMethod: 'API',
+        });
 
         this.logger.log(`Media pipeline completed successfully: ${uploadResult.videoUrl}`);
         return {

@@ -29,8 +29,14 @@
 ### 📺 유튜브 자동화
 - **SEO 최적화**: AI 기반 제목, 설명, 태그 자동 생성으로 검색 노출 최적화
 - **자동 업로드**: YouTube Data API v3를 통한 완전 자동 업로드
+- **브라우저 자동화 대안**: API 할당량 초과 시 Playwright 기반 자동 업로드
 - **중복 방지**: SQLite 기반 이미 업로드된 뉴스 추적 시스템
 - **카테고리 자동 분류**: 뉴스 주제에 맞는 유튜브 카테고리 자동 선택 (정치: 25)
+
+### 📱 텔레그램 알림
+- **업로드 성공 알림**: 유튜브 업로드 성공 시 텔레그램으로 자동 알림
+- **영상 정보**: 제목, 링크, 영상 타입(롱폼/숏츠), 업로드 방식(API/Browser) 포함
+- **실시간 모니터링**: 업로드 현황을 텔레그램으로 실시간 확인
 
 ### ⏰ 자동화 워크플로우
 - **매시간 자동 실행**: `@Cron(CronExpression.EVERY_HOUR)` - 매 시간 정각 자동 실행
@@ -94,6 +100,10 @@ GEMINI_API_KEY=your-gemini-api-key
 YOUTUBE_CLIENT_ID=your-youtube-client-id
 YOUTUBE_CLIENT_SECRET=your-youtube-client-secret
 YOUTUBE_REDIRECT_URI=http://localhost:3000/auth/callback
+
+# Telegram 알림 설정 (선택사항)
+TELEGRAM_BOT_TOKEN=your-telegram-bot-token
+TELEGRAM_CHAT_ID=your-telegram-chat-id
 ```
 
 ### API 키 발급 방법
@@ -113,6 +123,14 @@ YOUTUBE_REDIRECT_URI=http://localhost:3000/auth/callback
 2. **YouTube Data API v3** 활성화
 3. OAuth 2.0 클라이언트 ID 생성 (웹 애플리케이션)
 4. 리디렉션 URI 설정: `http://localhost:3000/auth/callback`
+
+#### 4. Telegram 봇 (선택사항)
+1. 텔레그램에서 [@BotFather](https://t.me/BotFather) 검색
+2. `/newbot` 명령으로 봇 생성
+3. 봇 토큰 복사 (TELEGRAM_BOT_TOKEN)
+4. 봇을 채널/그룹에 추가
+5. `https://api.telegram.org/bot<YOUR_BOT_TOKEN>/getUpdates` 방문
+6. 봇에게 메시지 전송 후 위 URL에서 `chat_id` 확인 (TELEGRAM_CHAT_ID)
 
 ## 🚀 실행
 
