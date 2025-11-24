@@ -37,6 +37,7 @@ async function testBrowserLogin() {
     console.log('🌐 Launching browser (visible mode)...');
     browser = await chromium.launch({
       headless: false, // 브라우저 창이 보이도록 설정
+      // channel: 'chrome' 제거 - Chromium 사용
       args: [
         '--disable-blink-features=AutomationControlled',
         '--disable-dev-shm-usage',

@@ -17,6 +17,7 @@ import { FailedUploadStorageService } from './services/failed-upload-storage.ser
 import { YoutubeBrowserUploadService } from './services/youtube-browser-upload.service';
 import { TelegramNotificationService } from './services/telegram-notification.service';
 import { PendingUploadRetryService } from './services/pending-upload-retry.service';
+import { PendingUploadScheduleService } from './services/pending-upload-schedule.service';
 import { NewsModule } from '../news/news.module';
 
 @Module({
@@ -39,6 +40,7 @@ import { NewsModule } from '../news/news.module';
     YoutubeBrowserUploadService,
     TelegramNotificationService,
     PendingUploadRetryService,
+    PendingUploadScheduleService,
   ],
   exports: [MediaPipelineService, PublishedNewsTrackingService, ShortsPipelineService, YoutubeBrowserUploadService, TelegramNotificationService, PendingUploadRetryService],
 })

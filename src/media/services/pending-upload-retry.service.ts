@@ -207,7 +207,10 @@ export class PendingUploadRetryService {
    * @param videoType - 재업로드할 영상 타입
    * @returns 성공/실패 통계
    */
-  async retryByType(videoType: 'longform' | 'shorts'): Promise<{
+  async retryByType(
+    videoType: 'longform' | 'shorts',
+    maxCount?: number,
+  ): Promise<{
     totalAttempted: number;
     successCount: number;
     failedCount: number;
@@ -215,10 +218,15 @@ export class PendingUploadRetryService {
     this.logger.log(`Retrying ${videoType} uploads only...`);
 
     const pendingUploads = await this.failedUploadStorageService.getPendingUploads();
-    const uploads =
+    const allUploads =
       videoType === 'longform' ? pendingUploads.longform : pendingUploads.shorts;
 
-    this.logger.log(`Found ${uploads.length} ${videoType} uploads to retry`);
+    // 최대 개수 제한 적용
+    const uploads = maxCount ? allUploads.slice(0, maxCount) : allUploads;
+
+    this.logger.log(
+      `Found ${allUploads.length} ${videoType} uploads, processing ${uploads.length}${maxCount ? ` (max: ${maxCount})` : ''}`,
+    );
 
     let successCount = 0;
     let failedCount = 0;
