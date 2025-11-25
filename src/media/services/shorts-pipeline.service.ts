@@ -230,7 +230,7 @@ export class ShortsPipelineService {
           description: shortsDescription,
           videoPath: videoPath,
           privacyStatus: options.privacyStatus || 'public',
-          tags: [...basicTags, 'Shorts', '60초뉴스', '숏폼'],
+          tags: basicTags,
           categoryId: '25', // News & Politics 카테고리
         });
       }
@@ -292,7 +292,7 @@ export class ShortsPipelineService {
           {
             title: shortsTitle,
             description: shortsDescription,
-            tags: [...basicTags, 'Shorts', '60초뉴스', '숏폼'],
+            tags: basicTags,
             categoryId: '25',
             privacyStatus: options.privacyStatus || 'public',
             videoType: 'shortform',
