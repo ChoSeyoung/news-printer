@@ -1,35 +1,33 @@
-import { Controller, Post, Query, HttpException, HttpStatus, Logger } from '@nestjs/common';
-import { DaumNewsScheduleService } from './services/daum-news-schedule.service';
+import { Controller, Post, HttpException, HttpStatus, Logger } from '@nestjs/common';
+import { HourlyBrowserUploadScheduleService } from './services/hourly-browser-upload-schedule.service';
 
 /**
  * 뉴스 컨트롤러
  *
- * 다음 뉴스 스크래핑 전용 엔드포인트 제공
+ * 뉴스 스크래핑 및 업로드 엔드포인트 제공
  */
 @Controller('news')
 export class NewsController {
   private readonly logger = new Logger(NewsController.name);
 
   constructor(
-    private readonly daumNewsSchedule: DaumNewsScheduleService,
+    private readonly hourlyUploadSchedule: HourlyBrowserUploadScheduleService,
   ) {}
 
   /**
-   * 다음 뉴스 수동 트리거 (대통령실/국회)
-   * @param limit - 각 카테고리별 기사 수 (기본: 100)
+   * 시간별 업로드 스케줄러 수동 트리거
+   * 뉴스 스크래핑 → 롱폼/숏폼 생성 및 업로드
    */
   @Post('daum/trigger')
-  async triggerDaumNews(
-    @Query('limit') limit?: string,
-  ): Promise<{ success: number; failed: number }> {
+  async triggerHourlyUpload(): Promise<{ message: string }> {
     try {
-      const limitNumber = limit ? parseInt(limit, 10) : 100;
-      this.logger.log(`Manual Daum News trigger: limit=${limitNumber}`);
-      return await this.daumNewsSchedule.triggerManually(limitNumber);
+      this.logger.log('Manual trigger: Hourly upload scheduler');
+      await this.hourlyUploadSchedule.triggerManually();
+      return { message: 'Hourly upload scheduler triggered successfully' };
     } catch (error) {
-      this.logger.error('Failed to trigger Daum News:', error);
+      this.logger.error('Failed to trigger hourly upload:', error);
       throw new HttpException(
-        `Failed to trigger Daum News: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        `Failed to trigger hourly upload: ${error instanceof Error ? error.message : 'Unknown error'}`,
         HttpStatus.INTERNAL_SERVER_ERROR,
       );
     }

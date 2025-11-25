@@ -2,7 +2,7 @@ import { Module, forwardRef } from '@nestjs/common';
 import { NewsController } from './news.controller';
 import { GeminiService } from './services/gemini.service';
 import { DaumNewsScraperService } from './services/daum-news-scraper.service';
-import { DaumNewsScheduleService } from './services/daum-news-schedule.service';
+import { HourlyBrowserUploadScheduleService } from './services/hourly-browser-upload-schedule.service';
 import { MediaModule } from '../media/media.module';
 
 @Module({
@@ -11,7 +11,7 @@ import { MediaModule } from '../media/media.module';
   providers: [
     GeminiService,
     DaumNewsScraperService,
-    DaumNewsScheduleService,
+    HourlyBrowserUploadScheduleService, // 통합 스케줄러 (활성)
   ],
   exports: [GeminiService],
 })
