@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { TtsService } from './tts.service';
+import { TtsService, SubtitleTiming } from './tts.service';
 import { VideoService } from './video.service';
 import { YoutubeService, YoutubeUploadResult } from './youtube.service';
 import { SeoOptimizerService } from './seo-optimizer.service';
@@ -9,6 +9,8 @@ import { PublishedNewsTrackingService } from './published-news-tracking.service'
 import { FailedUploadStorageService } from './failed-upload-storage.service';
 import { GeminiService } from '../../news/services/gemini.service';
 import { TelegramNotificationService } from './telegram-notification.service';
+import { YoutubeBrowserUploadService } from './youtube-browser-upload.service';
+import { YoutubeQuotaManagerService } from './youtube-quota-manager.service';
 
 export interface PublishNewsOptions {
   title: string;
@@ -59,6 +61,8 @@ export class MediaPipelineService {
     private readonly failedUploadStorageService: FailedUploadStorageService,
     private readonly geminiService: GeminiService,
     private readonly telegramNotificationService: TelegramNotificationService,
+    private readonly browserUploadService: YoutubeBrowserUploadService,
+    private readonly quotaManager: YoutubeQuotaManagerService,
   ) {}
 
   /**
@@ -97,12 +101,13 @@ export class MediaPipelineService {
         }
       }
 
-      // Step 1: Generate TTS audio files
-      this.logger.log('Step 1/6: Generating TTS audio');
-      const { anchorPath, reporterPath } = await this.ttsService.generateNewsScripts(
-        options.anchorScript,
-        options.reporterScript,
-      );
+      // Step 1: Generate TTS audio files with subtitles
+      this.logger.log('Step 1/6: Generating TTS audio with subtitles');
+      const { anchorPath, reporterPath, anchorSubtitles, reporterSubtitles } =
+        await this.ttsService.generateNewsScriptsWithSubtitles(
+          options.anchorScript,
+          options.reporterScript,
+        );
       anchorAudioPath = anchorPath;
       reporterAudioPath = reporterPath;
 
@@ -172,7 +177,7 @@ export class MediaPipelineService {
       });
 
       // Step 5: Create video from audio (롱폼 영상은 썸네일 사용, 쇼츠는 기존 이미지 사용)
-      this.logger.log('Step 5/6: Creating video');
+      this.logger.log('Step 5/6: Creating video with subtitles');
 
       // 롱폼 영상은 썸네일을 배경으로 사용
       const videoBackgroundImages = isLongForm
@@ -183,32 +188,115 @@ export class MediaPipelineService {
         this.logger.log('Using generated thumbnail as background for long-form video');
       }
 
+      // 앵커와 리포터 자막 병합
+      const mergedSubtitles = await this.mergeSubtitles(
+        anchorSubtitles,
+        reporterSubtitles,
+        anchorPath,
+        reporterPath,
+      );
+
+      if (mergedSubtitles.length > 0) {
+        this.logger.log(`Adding ${mergedSubtitles.length} subtitle segments to video`);
+      }
+
       videoPath = await this.videoService.createVideo({
         audioFiles: [anchorPath, reporterPath],
         backgroundImagePaths: videoBackgroundImages,
         addEndScreen: isLongForm, // 롱폼 영상에만 엔딩 화면 추가
         endScreenDuration: 10, // 10초 엔딩 화면
+        subtitles: mergedSubtitles.length > 0 ? mergedSubtitles : undefined, // 자막 전달
       });
 
       this.logger.debug(`Thumbnail created: ${thumbnailPath}`);
 
       // Step 6: Upload to YouTube with SEO metadata and thumbnail
       this.logger.log('Step 6/6: Uploading to YouTube');
-      const uploadResult: YoutubeUploadResult = await this.youtubeService.uploadVideo({
-        videoPath,
-        title: seoMetadata.optimizedTitle,
-        description: seoMetadata.optimizedDescription,
-        tags: seoMetadata.tags,
-        categoryId: seoMetadata.categoryId,
-        privacyStatus: options.privacyStatus || 'unlisted',
-        thumbnailPath,
-      });
 
-      // YouTube API 할당량 초과 또는 업로드 실패 시 저장
+      let uploadResult: YoutubeUploadResult;
+
+      // YouTube API 할당량 확인 - 초과된 경우 바로 브라우저 업로드로 전환
+      if (this.quotaManager.isApiQuotaExceeded()) {
+        this.logger.warn('YouTube API quota exceeded - skipping API upload, using browser upload directly');
+        uploadResult = {
+          success: false,
+          error: 'YouTube API quota exceeded',
+        };
+      } else {
+        // 할당량이 남아있으면 API 업로드 시도
+        uploadResult = await this.youtubeService.uploadVideo({
+          videoPath,
+          title: seoMetadata.optimizedTitle,
+          description: seoMetadata.optimizedDescription,
+          tags: seoMetadata.tags,
+          categoryId: seoMetadata.categoryId,
+          privacyStatus: options.privacyStatus || 'unlisted',
+          thumbnailPath,
+        });
+      }
+
+      // YouTube API 할당량 초과 또는 업로드 실패 시 브라우저 업로드 시도
       if (!uploadResult.success) {
-        this.logger.error(`Upload failed: ${uploadResult.error}`);
+        this.logger.error(`API upload failed: ${uploadResult.error}`);
+        this.logger.log('Attempting browser upload as fallback...');
 
-        // 업로드 실패 영상 저장
+        try {
+          // 브라우저 자동화로 업로드 시도
+          const browserResult = await this.browserUploadService.uploadVideo({
+            videoPath,
+            title: seoMetadata.optimizedTitle,
+            description: seoMetadata.optimizedDescription,
+            thumbnailPath,
+            privacyStatus: options.privacyStatus || 'unlisted',
+          });
+
+          if (browserResult.success) {
+            this.logger.log('✅ Browser upload succeeded!');
+
+            // Clean up temporary files
+            await this.cleanup(anchorAudioPath, reporterAudioPath, videoPath, thumbnailPath, ...backgroundImagePaths);
+
+            // 롱폼 영상의 경우 엔딩 화면 설정 시도 (videoId가 있는 경우)
+            if (isLongForm && browserResult.videoId) {
+              this.logger.log(`Setting end screen for long-form video: ${browserResult.videoId}`);
+              try {
+                await this.youtubeService.setEndScreen(browserResult.videoId);
+                this.logger.log('End screen set successfully');
+              } catch (error) {
+                this.logger.warn(`Failed to set end screen: ${error.message}`);
+              }
+            }
+
+            // Track published news
+            if (options.newsUrl && browserResult.videoUrl) {
+              await this.publishedNewsTrackingService.markAsPublished(
+                options.newsUrl,
+                options.title,
+                browserResult.videoId,
+                browserResult.videoUrl,
+              );
+            }
+
+            // Send Telegram notification
+            await this.telegramNotificationService.sendUploadSuccess({
+              title: options.title,
+              videoUrl: browserResult.videoUrl!,
+              videoType: 'longform',
+              uploadMethod: 'Browser',
+            });
+
+            return {
+              success: true,
+              videoId: browserResult.videoId,
+              videoUrl: browserResult.videoUrl,
+            };
+          }
+        } catch (browserError) {
+          this.logger.error(`Browser upload also failed: ${browserError.message}`);
+        }
+
+        // 두 방법 모두 실패 시 파일 저장
+        this.logger.warn('Both API and browser upload failed, saving for later retry...');
         const saved = await this.failedUploadStorageService.saveFailedUpload(
           videoPath,
           thumbnailPath || undefined,
@@ -235,7 +323,7 @@ export class MediaPipelineService {
 
         return {
           success: false,
-          error: `Upload failed and saved for retry: ${uploadResult.error}`,
+          error: `Both API and browser upload failed. Saved for retry: ${uploadResult.error}`,
           videoPath: saved ? undefined : videoPath,
         };
       }
@@ -392,5 +480,70 @@ ${options.reporterScript}
         }
       }
     }
+  }
+
+  /**
+   * 앵커와 리포터 자막을 시간 순서대로 병합
+   *
+   * 리포터 자막의 시작 시간을 앵커 음성 길이만큼 조정하여 병합합니다.
+   *
+   * @param anchorSubtitles - 앵커 자막 타이밍 배열
+   * @param reporterSubtitles - 리포터 자막 타이밍 배열
+   * @param anchorAudioPath - 앵커 음성 파일 경로
+   * @param reporterAudioPath - 리포터 음성 파일 경로
+   * @returns 병합 및 정렬된 자막 타이밍 배열
+   */
+  private async mergeSubtitles(
+    anchorSubtitles: SubtitleTiming[],
+    reporterSubtitles: SubtitleTiming[],
+    anchorAudioPath: string,
+    reporterAudioPath: string,
+  ): Promise<SubtitleTiming[]> {
+    try {
+      // 앵커 음성 길이 가져오기
+      const anchorDuration = await this.getAudioDuration(anchorAudioPath);
+      this.logger.debug(`Anchor audio duration: ${anchorDuration}s`);
+
+      // 리포터 자막 시작 시간 조정 (앵커 음성 길이만큼 offset)
+      const adjustedReporterSubtitles = reporterSubtitles.map(sub => ({
+        text: sub.text,
+        startTime: sub.startTime + anchorDuration,
+        endTime: sub.endTime + anchorDuration,
+      }));
+
+      // 병합 및 시간 순서대로 정렬
+      const mergedSubtitles = [...anchorSubtitles, ...adjustedReporterSubtitles].sort(
+        (a, b) => a.startTime - b.startTime
+      );
+
+      this.logger.debug(`Merged ${mergedSubtitles.length} subtitles (${anchorSubtitles.length} anchor + ${reporterSubtitles.length} reporter)`);
+      return mergedSubtitles;
+    } catch (error) {
+      this.logger.error('Failed to merge subtitles:', error.message);
+      // 병합 실패 시 빈 배열 반환 (자막 없이 영상 생성)
+      return [];
+    }
+  }
+
+  /**
+   * 음성 파일 길이 가져오기
+   *
+   * FFprobe를 사용하여 음성 파일의 길이를 초 단위로 반환합니다.
+   *
+   * @param audioPath - 음성 파일 경로
+   * @returns 음성 길이 (초)
+   */
+  private async getAudioDuration(audioPath: string): Promise<number> {
+    return new Promise((resolve, reject) => {
+      const ffmpeg = require('fluent-ffmpeg');
+      ffmpeg.ffprobe(audioPath, (err: any, metadata: any) => {
+        if (err) {
+          reject(err);
+        } else {
+          const duration = metadata.format.duration || 0;
+          resolve(duration);
+        }
+      });
+    });
   }
 }

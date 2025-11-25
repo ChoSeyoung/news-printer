@@ -7,6 +7,11 @@ import { SeoOptimizerService } from './seo-optimizer.service';
 import { ImageSearchService } from './image-search.service';
 import { FailedUploadStorageService } from './failed-upload-storage.service';
 import { TelegramNotificationService } from './telegram-notification.service';
+import { YoutubeBrowserUploadService } from './youtube-browser-upload.service';
+import { PublishedNewsTrackingService } from './published-news-tracking.service';
+import { YoutubeQuotaManagerService } from './youtube-quota-manager.service';
+import { VideoDurationUtil } from '../../common/utils/video-duration.util';
+import { TextPreprocessor } from '../../common/utils/text-preprocessor.util';
 import { promises as fs } from 'fs';
 
 /**
@@ -76,6 +81,9 @@ export class ShortsPipelineService {
     private readonly imageSearchService: ImageSearchService,
     private readonly failedUploadStorageService: FailedUploadStorageService,
     private readonly telegramNotificationService: TelegramNotificationService,
+    private readonly browserUploadService: YoutubeBrowserUploadService,
+    private readonly publishedNewsTrackingService: PublishedNewsTrackingService,
+    private readonly quotaManager: YoutubeQuotaManagerService,
   ) {}
 
   /**
@@ -170,6 +178,25 @@ export class ShortsPipelineService {
         subtitles,
       );
 
+      // 3-1️⃣ 영상 길이 확인 (59초 이하만 Shorts로 업로드 가능)
+      this.logger.log('Step 3-1: Checking video duration for Shorts compliance');
+      const videoDuration = await VideoDurationUtil.getVideoDuration(videoPath);
+      this.logger.log(`Video duration: ${videoDuration.toFixed(2)}s`);
+
+      if (videoDuration > 59) {
+        this.logger.error(`Video too long for Shorts: ${videoDuration.toFixed(2)}s (max: 59s)`);
+
+        // 임시 파일 정리
+        await this.cleanupTempFiles(audioPath, videoPath, ...downloadedImagePaths);
+
+        return {
+          success: false,
+          error: `Video duration (${videoDuration.toFixed(2)}s) exceeds Shorts limit (59s). Please shorten the script.`,
+        };
+      }
+
+      this.logger.log(`✅ Video duration is valid for Shorts: ${videoDuration.toFixed(2)}s`);
+
       // 4️⃣ Shorts 메타데이터 준비 (제목, 설명, 해시태그)
       this.logger.log('Step 4: Preparing Shorts metadata');
 
@@ -187,20 +214,78 @@ export class ShortsPipelineService {
       // 5️⃣ YouTube Shorts 업로드
       this.logger.log('Step 5: Uploading to YouTube Shorts');
 
-      const uploadResult = await this.youtubeService.uploadVideo({
-        title: shortsTitle,
-        description: shortsDescription,
-        videoPath: videoPath,
-        privacyStatus: options.privacyStatus || 'public',
-        tags: [...basicTags, 'Shorts', '60초뉴스', '숏폼'],
-        categoryId: '25', // News & Politics 카테고리
-      });
+      let uploadResult;
 
-      // YouTube API 할당량 초과 또는 업로드 실패 시 저장
+      // YouTube API 할당량 확인 - 초과된 경우 바로 브라우저 업로드로 전환
+      if (this.quotaManager.isApiQuotaExceeded()) {
+        this.logger.warn('YouTube API quota exceeded - skipping API upload, using browser upload directly');
+        uploadResult = {
+          success: false,
+          error: 'YouTube API quota exceeded',
+        };
+      } else {
+        // 할당량이 남아있으면 API 업로드 시도
+        uploadResult = await this.youtubeService.uploadVideo({
+          title: shortsTitle,
+          description: shortsDescription,
+          videoPath: videoPath,
+          privacyStatus: options.privacyStatus || 'public',
+          tags: [...basicTags, 'Shorts', '60초뉴스', '숏폼'],
+          categoryId: '25', // News & Politics 카테고리
+        });
+      }
+
+      // YouTube API 할당량 초과 또는 업로드 실패 시 브라우저 업로드 시도
       if (!uploadResult.success) {
-        this.logger.error(`Upload failed: ${uploadResult.error}`);
+        this.logger.error(`API upload failed: ${uploadResult.error}`);
+        this.logger.log('Attempting browser upload as fallback...');
 
-        // 업로드 실패 영상 저장
+        try {
+          // 브라우저 자동화로 업로드 시도
+          const browserResult = await this.browserUploadService.uploadVideo({
+            videoPath: videoPath,
+            title: shortsTitle,
+            description: shortsDescription,
+            thumbnailPath: undefined, // Shorts는 썸네일 없음
+            privacyStatus: options.privacyStatus || 'public',
+          });
+
+          if (browserResult.success) {
+            this.logger.log('✅ Browser upload succeeded!');
+
+            // Clean up temporary files
+            await this.cleanupTempFiles(audioPath, videoPath, ...downloadedImagePaths);
+
+            // Track published news
+            if (options.newsUrl && browserResult.videoUrl) {
+              await this.publishedNewsTrackingService.markAsPublished(
+                options.newsUrl,
+                options.title,
+                browserResult.videoId,
+                browserResult.videoUrl,
+              );
+            }
+
+            // Send Telegram notification
+            await this.telegramNotificationService.sendUploadSuccess({
+              title: options.title,
+              videoUrl: browserResult.videoUrl!,
+              videoType: 'shortform',
+              uploadMethod: 'Browser',
+            });
+
+            return {
+              success: true,
+              videoUrl: browserResult.videoUrl,
+              videoId: browserResult.videoId,
+            };
+          }
+        } catch (browserError) {
+          this.logger.error(`Browser upload also failed: ${browserError.message}`);
+        }
+
+        // 두 방법 모두 실패 시 파일 저장
+        this.logger.warn('Both API and browser upload failed, saving for later retry...');
         const saved = await this.failedUploadStorageService.saveFailedUpload(
           videoPath!,
           undefined, // Shorts는 썸네일 없음
@@ -210,14 +295,14 @@ export class ShortsPipelineService {
             tags: [...basicTags, 'Shorts', '60초뉴스', '숏폼'],
             categoryId: '25',
             privacyStatus: options.privacyStatus || 'public',
-            videoType: 'shorts',
+            videoType: 'shortform',
             failureReason: uploadResult.error || 'Unknown error',
             newsUrl: options.newsUrl,
           },
         );
 
         if (saved) {
-          this.logger.log('Failed Shorts upload saved to pending-uploads/shorts/');
+          this.logger.log('Failed Shorts upload saved to pending-uploads/shortform/');
           // 원본 파일은 복사되었으므로 임시 파일만 정리
           await this.cleanupTempFiles(audioPath, undefined, ...downloadedImagePaths);
         } else {
@@ -227,7 +312,7 @@ export class ShortsPipelineService {
 
         return {
           success: false,
-          error: `Upload failed and saved for retry: ${uploadResult.error}`,
+          error: `Both API and browser upload failed. Saved for retry: ${uploadResult.error}`,
         };
       }
 
@@ -240,7 +325,7 @@ export class ShortsPipelineService {
       await this.telegramNotificationService.sendUploadSuccess({
         title: options.title,
         videoUrl: uploadResult.videoUrl!,
-        videoType: 'shorts',
+        videoType: 'shortform',
         uploadMethod: 'API',
       });
 
@@ -266,8 +351,11 @@ export class ShortsPipelineService {
    * 길이 제한 (100자)
    */
   private optimizeShortsTitle(title: string): string {
+    // 한자 및 이니셜을 한글로 치환
+    let optimizedTitle = TextPreprocessor.preprocessText(title);
+
     // #Shorts 해시태그 제거
-    let optimizedTitle = title.replace(/#Shorts/gi, '').trim();
+    optimizedTitle = optimizedTitle.replace(/#Shorts/gi, '').trim();
 
     // YouTube 제목 길이 제한 (100자)
     if (optimizedTitle.length > 100) {

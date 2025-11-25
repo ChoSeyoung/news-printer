@@ -17,7 +17,8 @@ import { FailedUploadStorageService } from './services/failed-upload-storage.ser
 import { YoutubeBrowserUploadService } from './services/youtube-browser-upload.service';
 import { TelegramNotificationService } from './services/telegram-notification.service';
 import { PendingUploadRetryService } from './services/pending-upload-retry.service';
-import { PendingUploadScheduleService } from './services/pending-upload-schedule.service';
+import { CleanupService } from './services/cleanup.service';
+import { YoutubeQuotaManagerService } from './services/youtube-quota-manager.service';
 import { NewsModule } from '../news/news.module';
 
 @Module({
@@ -40,8 +41,9 @@ import { NewsModule } from '../news/news.module';
     YoutubeBrowserUploadService,
     TelegramNotificationService,
     PendingUploadRetryService,
-    PendingUploadScheduleService,
+    CleanupService,
+    YoutubeQuotaManagerService,
   ],
-  exports: [MediaPipelineService, PublishedNewsTrackingService, ShortsPipelineService, YoutubeBrowserUploadService, TelegramNotificationService, PendingUploadRetryService],
+  exports: [MediaPipelineService, PublishedNewsTrackingService, ShortsPipelineService, YoutubeBrowserUploadService, TelegramNotificationService, PendingUploadRetryService, CleanupService, YoutubeQuotaManagerService],
 })
 export class MediaModule {}

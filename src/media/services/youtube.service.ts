@@ -4,6 +4,8 @@ import { google, youtube_v3 } from 'googleapis';
 import * as fs from 'fs-extra';
 import * as path from 'path';
 import { TokenService } from './token.service';
+import { YoutubeQuotaManagerService } from './youtube-quota-manager.service';
+import { TextPreprocessor } from '../../common/utils/text-preprocessor.util';
 
 /**
  * YouTube 업로드 옵션 인터페이스
@@ -83,10 +85,12 @@ export class YoutubeService {
    *
    * @param configService - NestJS 환경 설정 서비스
    * @param tokenService - OAuth 토큰 관리 서비스
+   * @param quotaManager - YouTube API 할당량 관리 서비스
    */
   constructor(
     private configService: ConfigService,
     private tokenService: TokenService,
+    private quotaManager: YoutubeQuotaManagerService,
   ) {}
 
   /**
@@ -202,6 +206,15 @@ export class YoutubeService {
     try {
       this.logger.log(`Uploading video to YouTube: ${options.title}`);
 
+      // YouTube API 할당량 확인
+      if (this.quotaManager.isApiQuotaExceeded()) {
+        this.logger.warn('YouTube API quota exceeded - API upload skipped');
+        return {
+          success: false,
+          error: 'YouTube API quota exceeded - use browser upload instead',
+        };
+      }
+
       // YouTube API 클라이언트 초기화
       await this.initializeYoutubeClient();
 
@@ -209,11 +222,15 @@ export class YoutubeService {
       const fileSize = (await fs.stat(options.videoPath)).size;
       this.logger.debug(`Video file size: ${(fileSize / 1024 / 1024).toFixed(2)} MB`);
 
+      // 제목과 설명 전처리 (한자/이니셜 치환)
+      const preprocessedTitle = TextPreprocessor.preprocessText(options.title);
+      const preprocessedDescription = TextPreprocessor.preprocessText(options.description);
+
       // 영상 메타데이터 구성
       const videoMetadata: youtube_v3.Schema$Video = {
         snippet: {
-          title: options.title,
-          description: options.description,
+          title: preprocessedTitle,
+          description: preprocessedDescription,
           tags: options.tags || ['news', 'automated'],
           categoryId: options.categoryId || '25', // 25 = 뉴스/정치 카테고리
         },
@@ -255,6 +272,17 @@ export class YoutubeService {
       };
     } catch (error) {
       this.logger.error('Failed to upload video to YouTube:', error.message);
+
+      // YouTube API 할당량 초과 에러 확인
+      if (error.message && (
+        error.message.includes('quotaExceeded') ||
+        error.message.includes('quota') ||
+        (error.code === 403 && error.message.includes('exceeded'))
+      )) {
+        this.logger.error('YouTube API quota exceeded detected');
+        this.quotaManager.setQuotaExceeded(error.message);
+      }
+
       return {
         success: false,
         error: error.message,
