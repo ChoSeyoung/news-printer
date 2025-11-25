@@ -20,8 +20,8 @@ export interface FailedUploadMetadata {
   videoFileName: string;
   /** 썸네일 파일명 (선택사항) */
   thumbnailFileName?: string;
-  /** 영상 타입 (longform 또는 shorts) */
-  videoType: 'longform' | 'shorts';
+  /** 영상 타입 (longform 또는 shortform) */
+  videoType: 'longform' | 'shortform';
   /** 실패 시간 */
   failedAt: string;
   /** 실패 사유 */
@@ -44,7 +44,7 @@ export interface FailedUploadMetadata {
  * │   ├── thumbnail_20231123_001.jpg
  * │   ├── video_20231123_002.mp4
  * │   └── video_20231123_002.json
- * └── shorts/
+ * └── shortform/
  *     ├── short_20231123_001.mp4
  *     ├── short_20231123_001.json
  *     └── short_20231123_002.mp4
@@ -56,7 +56,7 @@ export class FailedUploadStorageService {
   /** 대기 중인 업로드 저장 디렉토리 */
   private readonly pendingUploadsDir = './pending-uploads';
   private readonly longformDir = path.join(this.pendingUploadsDir, 'longform');
-  private readonly shortsDir = path.join(this.pendingUploadsDir, 'shorts');
+  private readonly shortsDir = path.join(this.pendingUploadsDir, 'shortform');
 
   constructor() {
     this.ensureDirectories();
@@ -138,18 +138,18 @@ export class FailedUploadStorageService {
   /**
    * 저장된 모든 대기 중인 업로드 목록 조회
    *
-   * @returns 롱폼과 숏츠 목록
+   * @returns 롱폼과 숏폼 목록
    */
   async getPendingUploads(): Promise<{
     longform: FailedUploadMetadata[];
-    shorts: FailedUploadMetadata[];
+    shortform: FailedUploadMetadata[];
   }> {
     const longformUploads = await this.getUploadsFromDirectory(this.longformDir);
-    const shortsUploads = await this.getUploadsFromDirectory(this.shortsDir);
+    const shortformUploads = await this.getUploadsFromDirectory(this.shortsDir);
 
     return {
       longform: longformUploads,
-      shorts: shortsUploads,
+      shortform: shortformUploads,
     };
   }
 
@@ -184,11 +184,11 @@ export class FailedUploadStorageService {
   /**
    * 특정 대기 중인 업로드 삭제
    *
-   * @param videoType - 영상 타입 (longform 또는 shorts)
+   * @param videoType - 영상 타입 (longform 또는 shortform)
    * @param baseName - 파일 기본 이름 (확장자 제외)
    * @returns 삭제 성공 여부
    */
-  async deletePendingUpload(videoType: 'longform' | 'shorts', baseName: string): Promise<boolean> {
+  async deletePendingUpload(videoType: 'longform' | 'shortform', baseName: string): Promise<boolean> {
     try {
       const targetDir = videoType === 'longform' ? this.longformDir : this.shortsDir;
 
@@ -235,7 +235,7 @@ export class FailedUploadStorageService {
    * @param videoFileName - 영상 파일명
    * @returns 영상 파일 전체 경로
    */
-  getVideoPath(videoType: 'longform' | 'shorts', videoFileName: string): string {
+  getVideoPath(videoType: 'longform' | 'shortform', videoFileName: string): string {
     const targetDir = videoType === 'longform' ? this.longformDir : this.shortsDir;
     return path.join(targetDir, videoFileName);
   }
@@ -247,7 +247,7 @@ export class FailedUploadStorageService {
    * @param thumbnailFileName - 썸네일 파일명
    * @returns 썸네일 파일 전체 경로
    */
-  getThumbnailPath(videoType: 'longform' | 'shorts', thumbnailFileName: string): string {
+  getThumbnailPath(videoType: 'longform' | 'shortform', thumbnailFileName: string): string {
     const targetDir = videoType === 'longform' ? this.longformDir : this.shortsDir;
     return path.join(targetDir, thumbnailFileName);
   }
@@ -255,19 +255,19 @@ export class FailedUploadStorageService {
   /**
    * 대기 중인 업로드 통계 조회
    *
-   * @returns 롱폼과 숏츠의 개수
+   * @returns 롱폼과 숏폼의 개수
    */
   async getStatistics(): Promise<{
     longformCount: number;
-    shortsCount: number;
+    shortformCount: number;
     totalCount: number;
   }> {
     const pending = await this.getPendingUploads();
 
     return {
       longformCount: pending.longform.length,
-      shortsCount: pending.shorts.length,
-      totalCount: pending.longform.length + pending.shorts.length,
+      shortformCount: pending.shortform.length,
+      totalCount: pending.longform.length + pending.shortform.length,
     };
   }
 }

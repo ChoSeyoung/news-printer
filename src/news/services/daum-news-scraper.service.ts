@@ -20,14 +20,14 @@ export interface DaumArticleData {
   imageUrls: string[];
   /** 크롭된 이미지 로컬 경로 배열 */
   croppedImagePaths: string[];
-  /** 카테고리 (president/assembly) */
-  category: 'president' | 'assembly';
+  /** 카테고리 (assembly) */
+  category: 'assembly';
 }
 
 /**
  * 다음 뉴스 스크래핑 서비스
  *
- * 다음 뉴스 대통령실/국회 페이지에서 기사를 크롤링합니다.
+ * 다음 뉴스 국회 페이지에서 기사를 크롤링합니다.
  *
  * 주요 기능:
  * - 뉴스 목록 페이지에서 기사 링크 추출
@@ -46,7 +46,6 @@ export class DaumNewsScraperService {
 
   /** 다음 뉴스 목록 URL */
   private readonly listUrls = {
-    president: 'https://news.daum.net/president',
     assembly: 'https://news.daum.net/assembly',
   };
 
@@ -65,6 +64,24 @@ export class DaumNewsScraperService {
     }
   }
 
+
+  /**
+   * 뉴스 제목 정리: 부가 정보 태그 제거
+   *
+   * @param title - 원본 제목
+   * @returns 정리된 제목
+   *
+   * 제거 항목:
+   * - (종합), (속보), (단독), (영상) 등 소괄호 안의 모든 내용
+   * - [데이터로 본 정치민심], [단독], [속보] 등 대괄호 안의 모든 내용
+   */
+  private cleanTitle(title: string): string {
+    return title
+      .replace(/\([^)]*\)/g, '')  // (...) 형태 제거
+      .replace(/\[[^\]]*\]/g, '') // [...] 형태 제거
+      .trim();                    // 앞뒤 공백 제거
+  }
+
   /**
    * 모든 카테고리에서 뉴스 기사 목록 가져오기
    *
@@ -74,7 +91,7 @@ export class DaumNewsScraperService {
   async fetchAllNews(limit: number = 10): Promise<DaumArticleData[]> {
     const results: DaumArticleData[] = [];
 
-    for (const category of ['president', 'assembly'] as const) {
+    for (const category of ['assembly'] as const) {
       try {
         const articles = await this.fetchNewsByCategory(category, limit);
         results.push(...articles);
@@ -89,12 +106,12 @@ export class DaumNewsScraperService {
   /**
    * 특정 카테고리의 뉴스 기사 목록 가져오기
    *
-   * @param category - 카테고리 (president/assembly)
+   * @param category - 카테고리 (assembly)
    * @param limit - 최대 기사 수
    * @returns 기사 데이터 배열
    */
   async fetchNewsByCategory(
-    category: 'president' | 'assembly',
+    category: 'assembly',
     limit: number = 10,
   ): Promise<DaumArticleData[]> {
     const listUrl = this.listUrls[category];
@@ -165,7 +182,7 @@ export class DaumNewsScraperService {
    */
   private async fetchArticleDetail(
     url: string,
-    category: 'president' | 'assembly',
+    category: 'assembly',
   ): Promise<DaumArticleData | null> {
     this.logger.debug(`Fetching article: ${url}`);
 
@@ -173,11 +190,12 @@ export class DaumNewsScraperService {
     const $ = cheerio.load(html);
 
     // 제목 추출: h3.tit_view
-    const title = $('h3.tit_view').text().trim();
-    if (!title) {
+    const rawTitle = $('h3.tit_view').text().trim();
+    if (!rawTitle) {
       this.logger.warn(`No title found for: ${url}`);
       return null;
     }
+    const title = this.cleanTitle(rawTitle); // 제목 정리 (전처리는 YouTube 업로드 시 수행)
 
     // 본문 추출: div.article_view 내 p 태그만 추출
     const contentElement = $('div.article_view');
@@ -193,6 +211,7 @@ export class DaumNewsScraperService {
       this.logger.warn(`No content found for: ${url}`);
       return null;
     }
+    // 전처리는 YouTube 업로드 시 수행
 
     // 이미지 URL 추출 - data-org-src 속성 우선 사용 (원본 고화질 이미지)
     const imageUrls: string[] = [];

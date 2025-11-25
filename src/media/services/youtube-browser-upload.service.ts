@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { chromium, Browser, Page, BrowserContext } from 'playwright';
 import { promises as fs } from 'fs';
 import * as path from 'path';
+import { TextPreprocessor } from '../../common/utils/text-preprocessor.util';
 
 /**
  * 브라우저 업로드 옵션
@@ -73,19 +74,13 @@ export class YoutubeBrowserUploadService {
   private readonly AUTH_STATE_PATH = './temp/youtube-auth-state.json';
 
   /**
-   * 브라우저 초기화 (한 번만 실행, 이후 재사용)
+   * 브라우저 초기화 (매 업로드마다 새로운 브라우저 생성)
    */
   private async initBrowser(): Promise<void> {
-    // 이미 브라우저가 열려있으면 재사용
-    if (this.browser && this.context) {
-      this.logger.log('Reusing existing browser instance');
-      return;
-    }
-
-    this.logger.log('Initializing headless browser...');
+    this.logger.log('Initializing new browser instance...');
 
     this.browser = await chromium.launch({
-      headless: true, // 백그라운드 실행, 화면 필요 없음
+      headless: false,
       args: [
         '--disable-blink-features=AutomationControlled', // 자동화 감지 회피
         '--disable-dev-shm-usage',
@@ -219,7 +214,13 @@ export class YoutubeBrowserUploadService {
   private async loginToYouTubeStudio(page: Page): Promise<boolean> {
     try {
       this.logger.log('Navigating to YouTube Studio...');
-      await page.goto('https://studio.youtube.com', { waitUntil: 'networkidle', timeout: 60000 });
+      await page.goto('https://studio.youtube.com', {
+        waitUntil: 'domcontentloaded', // networkidle보다 더 빠르고 안정적
+        timeout: 120000 // 타임아웃 2분으로 증가
+      });
+
+      // 페이지가 완전히 로드될 때까지 추가 대기
+      await this.randomDelay(3000, 5000);
 
       // 로그인 확인 - 여러 선택자 시도
       const createButtonSelectors = [
@@ -390,10 +391,10 @@ export class YoutubeBrowserUploadService {
       this.logger.log('Step 3/7: Clicking Upload videos...');
       try {
         // 한국어 먼저 시도
-        await page.click('text=동영상 업로드', { timeout: 5000 });
+        await page.click('text=동영상 업로드', { timeout: 10000 });
       } catch {
         // 실패 시 영어 시도
-        await page.click('text=Upload videos', { timeout: 5000 });
+        await page.click('text=Upload videos', { timeout: 10000 });
       }
       await this.randomDelay(1500, 3000);
 
@@ -424,8 +425,11 @@ export class YoutubeBrowserUploadService {
       await page.keyboard.press('Backspace');
       await this.randomDelay(300, 700); // 기존 내용 삭제 후 생각하는 시간
 
+      // 제목 전처리 (한자/이니셜 치환)
+      const preprocessedTitle = TextPreprocessor.preprocessText(options.title);
+
       // 한 글자씩 타이핑 (keyboard.type 사용 - element.type보다 더 자연스러움)
-      const titleWords = options.title.split(' ');
+      const titleWords = preprocessedTitle.split(' ');
       for (let i = 0; i < titleWords.length; i++) {
         const word = titleWords[i];
 
@@ -462,7 +466,10 @@ export class YoutubeBrowserUploadService {
       await page.keyboard.press('Backspace');
       await this.randomDelay(300, 700);
 
-      const descWords = options.description.split(' ');
+      // 설명 전처리 (한자/이니셜 치환)
+      const preprocessedDescription = TextPreprocessor.preprocessText(options.description);
+
+      const descWords = preprocessedDescription.split(' ');
       for (let i = 0; i < descWords.length; i++) {
         const word = descWords[i];
 
@@ -539,7 +546,7 @@ export class YoutubeBrowserUploadService {
           const count = await page.locator(selector).count();
           if (count > 0) {
             this.logger.log(`Found Next button with selector: ${selector}`);
-            await page.locator(selector).first().click({ timeout: 5000 });
+            await page.locator(selector).first().click({ timeout: 10000 });
             firstNextClicked = true;
             break;
           }
@@ -564,13 +571,13 @@ export class YoutubeBrowserUploadService {
         const count = await addEndScreenButton.count();
         if (count > 0) {
           this.logger.log('Clicking "Add" button for end screen...');
-          await addEndScreenButton.first().click({ timeout: 5000 });
+          await addEndScreenButton.first().click({ timeout: 10000 });
           await this.randomDelay(2000, 3000);
 
           // 최종 화면 템플릿 선택 (첫 번째 템플릿: 동영상 1개, 구독 1개)
           this.logger.log('Selecting end screen template...');
           const templateCard = page.locator('div.card.style-scope.ytve-endscreen-template-picker').first();
-          await templateCard.click({ timeout: 5000 });
+          await templateCard.click({ timeout: 10000 });
           await this.randomDelay(2000, 3000);
 
           // "저장" 버튼 클릭하여 최종 화면 저장
@@ -584,7 +591,7 @@ export class YoutubeBrowserUploadService {
             return btn && !btn.hasAttribute('disabled');
           }, { timeout: 10000 });
 
-          await saveButton.click({ timeout: 5000 });
+          await saveButton.click({ timeout: 10000 });
           await this.randomDelay(1000, 2000);
 
           this.logger.log('End screen saved successfully');
@@ -615,7 +622,7 @@ export class YoutubeBrowserUploadService {
             const count = await page.locator(selector).count();
             if (count > 0) {
               this.logger.log(`Found Next button with selector: ${selector}`);
-              await page.locator(selector).first().click({ timeout: 5000 });
+              await page.locator(selector).first().click({ timeout: 10000 });
               clicked = true;
               break;
             }
@@ -669,7 +676,7 @@ export class YoutubeBrowserUploadService {
               return btn && !btn.hasAttribute('disabled');
             }, selector, { timeout: 10000 });
 
-            await page.locator(selector).first().click({ timeout: 5000 });
+            await page.locator(selector).first().click({ timeout: 10000 });
             saveClicked = true;
             this.logger.log('Save button clicked successfully');
             break;
@@ -714,14 +721,12 @@ export class YoutubeBrowserUploadService {
       const duration = ((Date.now() - startTime) / 1000).toFixed(1);
       this.logger.log(`✅ Browser upload completed in ${duration}s: ${videoUrl}`);
 
-      // 새 탭 열기 (다음 업로드를 위해)
-      this.logger.log('Opening new tab for next upload...');
-      const newPage = await this.context.newPage();
-      await newPage.goto('https://studio.youtube.com');
-
-      // 기존 페이지 닫기
+      // 페이지 닫기
       await page.close();
-      this.logger.log('Previous upload tab closed, new tab ready');
+
+      // 브라우저 완전 종료 (다음 업로드 시 새 브라우저 생성)
+      this.logger.log('Closing browser for clean state...');
+      await this.cleanup();
 
       await this.randomDelay(1000, 2000);
 
@@ -733,13 +738,14 @@ export class YoutubeBrowserUploadService {
 
     } catch (error) {
       this.logger.error('❌ Browser upload failed:', error.message);
+
+      // 에러 발생 시에도 브라우저 종료
+      await this.cleanup();
+
       return {
         success: false,
         error: error.message,
       };
-    } finally {
-      // 페이지만 닫고 브라우저/컨텍스트는 재사용을 위해 유지
-      // (브라우저는 서비스가 종료될 때 또는 명시적으로 cleanup 호출 시 닫힘)
     }
   }
 

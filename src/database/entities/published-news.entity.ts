@@ -29,7 +29,7 @@ export class PublishedNews {
   videoUrl: string;
 
   @Column({ type: 'varchar', length: 10, default: 'longform' })
-  videoType: string; // 'longform' | 'shorts'
+  videoType: string; // 'longform' | 'shortform'
 
   @Column({ type: 'varchar', length: 50, nullable: true })
   category: string;

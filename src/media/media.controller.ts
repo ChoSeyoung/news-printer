@@ -239,7 +239,7 @@ export class MediaController {
         status: 'running',
         pending: {
           longformCount: stats.longformCount,
-          shortsCount: stats.shortsCount,
+          shortformCount: stats.shortformCount,
           totalCount: stats.totalCount,
         },
         note: 'Process is running in background. Check logs or Telegram notifications for progress.',
@@ -284,11 +284,11 @@ export class MediaController {
    * @returns 작업 시작 확인
    */
   @Post('retry-pending-uploads/:videoType')
-  async retryPendingUploadsByType(@Param('videoType') videoType: 'longform' | 'shorts') {
+  async retryPendingUploadsByType(@Param('videoType') videoType: 'longform' | 'shortform') {
     try {
-      if (videoType !== 'longform' && videoType !== 'shorts') {
+      if (videoType !== 'longform' && videoType !== 'shortform') {
         throw new HttpException(
-          'Invalid video type. Must be "longform" or "shorts"',
+          'Invalid video type. Must be "longform" or "shortform"',
           HttpStatus.BAD_REQUEST,
         );
       }
@@ -297,7 +297,7 @@ export class MediaController {
 
       // Get current stats
       const stats = await this.pendingUploadRetryService.getStatistics();
-      const count = videoType === 'longform' ? stats.longformCount : stats.shortsCount;
+      const count = videoType === 'longform' ? stats.longformCount : stats.shortformCount;
 
       // Start background process
       this.pendingUploadRetryService.retryByType(videoType).then((result) => {

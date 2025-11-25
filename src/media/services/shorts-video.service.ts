@@ -127,44 +127,47 @@ export class ShortsVideoService {
    * @returns 줄바꿈된 텍스트
    */
   private wrapText(text: string, maxCharsPerLine: number, maxLines?: number): string {
-    const words = text.split(' ');
     const lines: string[] = [];
     let currentLine = '';
 
-    for (const word of words) {
-      // 최대 줄 수 제한 확인
-      if (maxLines && lines.length >= maxLines) {
-        break;
-      }
+    // 공백으로 단어 분리
+    const words = text.split(' ');
 
-      if (currentLine.length + word.length + 1 <= maxCharsPerLine) {
-        currentLine += (currentLine ? ' ' : '') + word;
+    for (const word of words) {
+      // 현재 줄에 단어를 추가할 수 있는지 확인
+      const testLine = currentLine ? `${currentLine} ${word}` : word;
+
+      if (testLine.length <= maxCharsPerLine) {
+        currentLine = testLine;
       } else {
+        // 현재 줄을 저장하고 새 줄 시작
         if (currentLine) {
           lines.push(currentLine);
-          // 최대 줄 수 도달 시 중단
-          if (maxLines && lines.length >= maxLines) {
-            currentLine = '';
-            break;
-          }
+          currentLine = '';
         }
-        // 단어가 너무 길면 강제 분할
+
+        // 단어가 maxCharsPerLine보다 길면 문자 단위로 분할
         if (word.length > maxCharsPerLine) {
           let remaining = word;
-          while (remaining.length > maxCharsPerLine) {
-            if (maxLines && lines.length >= maxLines) break;
-            lines.push(remaining.substring(0, maxCharsPerLine));
+          while (remaining.length > 0) {
+            const chunk = remaining.substring(0, maxCharsPerLine);
+            lines.push(chunk);
             remaining = remaining.substring(maxCharsPerLine);
           }
-          currentLine = remaining;
         } else {
           currentLine = word;
         }
       }
     }
 
-    if (currentLine && (!maxLines || lines.length < maxLines)) {
+    // 마지막 줄 추가
+    if (currentLine) {
       lines.push(currentLine);
+    }
+
+    // maxLines 제한이 있으면 해당 줄 수만 반환
+    if (maxLines && lines.length > maxLines) {
+      return lines.slice(0, maxLines).join('\n');
     }
 
     return lines.join('\n');
@@ -221,12 +224,12 @@ export class ShortsVideoService {
         `x=80:y=330:line_spacing=10`,
       ];
 
-      // 시간 동기화 자막 추가 (최대 2줄로 제한)
+      // 시간 동기화 자막 추가 (줄 수 제한 제거 - 전체 텍스트 표시)
       if (subtitles && subtitles.length > 0) {
         // 각 문장에 대해 시간 기반 자막 추가
         for (const subtitle of subtitles) {
-          // TTS와 조화롭게 최대 2줄로 제한
-          const wrappedSubtitle = this.wrapText(subtitle.text, 18, 2);
+          // 줄 수 제한 없이 전체 텍스트를 표시 (가독성 우선)
+          const wrappedSubtitle = this.wrapText(subtitle.text, 18);
           const escapedSubtitle = this.escapeFFmpegText(wrappedSubtitle);
 
           // enable='between(t,start,end)'로 시간 구간에만 표시
@@ -238,8 +241,8 @@ export class ShortsVideoService {
           );
         }
       } else {
-        // 자막 타이밍이 없으면 전체 스크립트를 고정 표시 (최대 2줄)
-        const wrappedScript = this.wrapText(script, 18, 2);
+        // 자막 타이밍이 없으면 전체 스크립트를 고정 표시 (줄 수 제한 없음)
+        const wrappedScript = this.wrapText(script, 18);
         const escapedScript = this.escapeFFmpegText(wrappedScript);
 
         videoFilters.push(

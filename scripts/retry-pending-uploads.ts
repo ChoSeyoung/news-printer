@@ -7,12 +7,12 @@
  *   npx ts-node scripts/retry-pending-uploads.ts [options]
  *
  * 옵션:
- *   --type shorts|longform|all  처리할 영상 타입 (기본: all)
- *   --max <number>              최대 처리 개수 (기본: 제한 없음)
+ *   --type shortform|longform|all  처리할 영상 타입 (기본: all)
+ *   --max <number>                 최대 처리 개수 (기본: 제한 없음)
  *
  * 예시:
  *   npx ts-node scripts/retry-pending-uploads.ts
- *   npx ts-node scripts/retry-pending-uploads.ts --type shorts
+ *   npx ts-node scripts/retry-pending-uploads.ts --type shortform
  *   npx ts-node scripts/retry-pending-uploads.ts --type longform --max 5
  */
 
@@ -25,16 +25,16 @@ async function main() {
 
   // CLI 인자 파싱
   const args = process.argv.slice(2);
-  let videoType: 'shorts' | 'longform' | 'all' = 'all';
+  let videoType: 'shortform' | 'longform' | 'all' = 'all';
   let maxCount: number | undefined = undefined;
 
   for (let i = 0; i < args.length; i++) {
     if (args[i] === '--type' && args[i + 1]) {
       const type = args[i + 1].toLowerCase();
-      if (type === 'shorts' || type === 'longform' || type === 'all') {
+      if (type === 'shortform' || type === 'longform' || type === 'all') {
         videoType = type;
       } else {
-        console.error(`❌ Invalid type: ${type}. Use: shorts, longform, or all`);
+        console.error(`❌ Invalid type: ${type}. Use: shortform, longform, or all`);
         process.exit(1);
       }
       i++;
@@ -63,7 +63,7 @@ async function main() {
     // 통계 조회
     const stats = await retryService.getStatistics();
     console.log(`📊 Current pending uploads:`);
-    console.log(`   Shorts: ${stats.shortsCount}`);
+    console.log(`   Shortform: ${stats.shortformCount}`);
     console.log(`   Longform: ${stats.longformCount}`);
     console.log(`   Total: ${stats.totalCount}\n`);
 
@@ -77,12 +77,12 @@ async function main() {
     console.log('⏳ Processing pending uploads...\n');
 
     if (videoType === 'all') {
-      // Shorts 처리
-      if (stats.shortsCount > 0) {
-        console.log('📱 Processing Shorts...');
-        const shortsResult = await retryService.retryByType('shorts', maxCount);
+      // Shortform 처리
+      if (stats.shortformCount > 0) {
+        console.log('📱 Processing Shortform...');
+        const shortformResult = await retryService.retryByType('shortform', maxCount);
         console.log(
-          `   ✅ Shorts: ${shortsResult.successCount} success, ${shortsResult.failedCount} failed (${shortsResult.totalAttempted} total)\n`,
+          `   ✅ Shortform: ${shortformResult.successCount} success, ${shortformResult.failedCount} failed (${shortformResult.totalAttempted} total)\n`,
         );
       }
 
@@ -96,7 +96,7 @@ async function main() {
       }
     } else {
       // 특정 타입만 처리
-      const emoji = videoType === 'shorts' ? '📱' : '🎬';
+      const emoji = videoType === 'shortform' ? '📱' : '🎬';
       console.log(`${emoji} Processing ${videoType}...`);
       const result = await retryService.retryByType(videoType, maxCount);
       console.log(

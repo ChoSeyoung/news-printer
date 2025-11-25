@@ -12,7 +12,7 @@ export interface TelegramNotificationOptions {
   videoUrl: string;
 
   /** 비디오 타입 */
-  videoType?: 'longform' | 'shorts';
+  videoType?: 'longform' | 'shortform';
 
   /** 업로드 방식 */
   uploadMethod?: 'API' | 'Browser';
@@ -74,7 +74,7 @@ export class TelegramNotificationService {
     }
 
     try {
-      const emoji = options.videoType === 'shorts' ? '📱' : '🎬';
+      const emoji = options.videoType === 'shortform' ? '📱' : '🎬';
       const method = options.uploadMethod || 'API';
       const methodEmoji = method === 'API' ? '🚀' : '🤖';
 
@@ -118,7 +118,7 @@ export class TelegramNotificationService {
     message += `🔗 *링크:* ${options.videoUrl}\n`;
 
     if (options.videoType) {
-      const typeText = options.videoType === 'shorts' ? 'Shorts' : 'Long-form';
+      const typeText = options.videoType === 'shortform' ? 'Shorts' : 'Long-form';
       message += `📊 *타입:* ${typeText}\n`;
     }
 

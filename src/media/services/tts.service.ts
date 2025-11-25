@@ -320,6 +320,77 @@ export class TtsService {
   }
 
   /**
+   * 뉴스 대본(앵커 + 리포터)을 음성 파일로 변환 (자막 타이밍 포함)
+   *
+   * 앵커와 리포터 대본을 각각 다른 음색(여성/남성)으로 생성합니다.
+   * generateNewsScripts()와 달리, 자막 타이밍 정보도 함께 반환합니다.
+   *
+   * 음성 설정:
+   * - 앵커: 여성 음성 (FEMALE), 말하기 속도 1.15
+   * - 리포터: 남성 음성 (MALE), 말하기 속도 1.15
+   *
+   * @param anchorText - 앵커 대본 텍스트
+   * @param reporterText - 리포터 대본 텍스트
+   * @returns 앵커와 리포터 음성 파일 경로 및 자막 타이밍 정보
+   * @throws {Error} 음성 생성 실패 시
+   *
+   * @example
+   * ```typescript
+   * const result = await ttsService.generateNewsScriptsWithSubtitles(
+   *   '안녕하세요. 9시 뉴스입니다.',
+   *   '김철수 기자가 현장에서 전합니다.'
+   * );
+   * // 반환값:
+   * // {
+   * //   anchorPath: './temp/tts_1234567890_abc123.wav',
+   * //   reporterPath: './temp/tts_1234567891_def456.wav',
+   * //   anchorSubtitles: [{ text: '...', startTime: 0, endTime: 1.5 }],
+   * //   reporterSubtitles: [{ text: '...', startTime: 0, endTime: 2.0 }]
+   * // }
+   * ```
+   */
+  async generateNewsScriptsWithSubtitles(
+    anchorText: string,
+    reporterText: string,
+  ): Promise<{
+    anchorPath: string;
+    reporterPath: string;
+    anchorSubtitles: SubtitleTiming[];
+    reporterSubtitles: SubtitleTiming[];
+  }> {
+    try {
+      this.logger.log('Generating news scripts audio files with subtitles');
+
+      // 앵커 음성 생성 (여성 음성, 자막 타이밍 포함)
+      const anchorResult = await this.generateSpeechWithTimings({
+        text: anchorText,
+        voice: 'FEMALE',
+        speakingRate: 1.15,
+        enableTimepoints: true,
+      });
+
+      // 리포터 음성 생성 (남성 음성, 자막 타이밍 포함)
+      const reporterResult = await this.generateSpeechWithTimings({
+        text: reporterText,
+        voice: 'MALE',
+        speakingRate: 1.15,
+        enableTimepoints: true,
+      });
+
+      this.logger.log('News scripts audio files with subtitles generated successfully');
+      return {
+        anchorPath: anchorResult.audioPath,
+        reporterPath: reporterResult.audioPath,
+        anchorSubtitles: anchorResult.subtitles || [],
+        reporterSubtitles: reporterResult.subtitles || [],
+      };
+    } catch (error) {
+      this.logger.error('Failed to generate news scripts with subtitles:', error.message);
+      throw error;
+    }
+  }
+
+  /**
    * 임시 음성 파일 삭제
    *
    * 생성된 음성 파일을 임시 디렉토리에서 삭제합니다.

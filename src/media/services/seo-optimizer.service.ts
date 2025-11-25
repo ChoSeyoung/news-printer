@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { GoogleGenerativeAI } from '@google/generative-ai';
+import { TextPreprocessor } from '../../common/utils/text-preprocessor.util';
 
 /**
  * SEO 메타데이터 인터페이스
@@ -279,8 +280,8 @@ export class SeoOptimizerService {
     keywords: string[],
     category: string,
   ): string {
-    // 원본 제목 그대로 사용 (썸네일에 들어가는 제목)
-    let title = originalTitle;
+    // 한자 및 이니셜을 한글로 치환
+    let title = TextPreprocessor.preprocessText(originalTitle);
 
     // 100자 제한 (YouTube 제목 길이 제한)
     if (title.length > 100) {
@@ -323,6 +324,9 @@ export class SeoOptimizerService {
     // 뉴스 내용 완전 요약 (Gemini AI로 생성)
     const summary = await this.createCompleteSummary(newsContent, anchorScript, reporterScript);
 
+    // 요약문에서 한자 및 이니셜 치환
+    const preprocessedSummary = TextPreprocessor.preprocessText(summary);
+
     // 키워드 해시태그 생성 (최대 15개, 공백 제거)
     const keywordHashtags = keywords
       .slice(0, 15)
@@ -332,7 +336,7 @@ export class SeoOptimizerService {
     const description = `
 ${dateStr} 주요 뉴스입니다.
 
-${summary}
+${preprocessedSummary}
 
 구독과 좋아요는 더 나은 콘텐츠 제작에 큰 힘이 됩니다.
 
