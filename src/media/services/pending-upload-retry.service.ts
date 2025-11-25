@@ -8,6 +8,7 @@ import {
   BrowserUploadResult,
 } from './youtube-browser-upload.service';
 import { TelegramNotificationService } from './telegram-notification.service';
+import { CleanupService } from './cleanup.service';
 
 /**
  * pending-uploads 디렉토리 재업로드 서비스
@@ -29,6 +30,7 @@ export class PendingUploadRetryService {
     private readonly failedUploadStorageService: FailedUploadStorageService,
     private readonly browserUploadService: YoutubeBrowserUploadService,
     private readonly telegramNotificationService: TelegramNotificationService,
+    private readonly cleanupService: CleanupService,
   ) {}
 
   /**
@@ -42,7 +44,7 @@ export class PendingUploadRetryService {
     failedCount: number;
     results: Array<{
       title: string;
-      videoType: 'longform' | 'shorts';
+      videoType: 'longform' | 'shortform';
       success: boolean;
       videoUrl?: string;
       error?: string;
@@ -54,11 +56,11 @@ export class PendingUploadRetryService {
     const pendingUploads = await this.failedUploadStorageService.getPendingUploads();
     const allUploads = [
       ...pendingUploads.longform.map((u) => ({ ...u, videoType: 'longform' as const })),
-      ...pendingUploads.shorts.map((u) => ({ ...u, videoType: 'shorts' as const })),
+      ...pendingUploads.shortform.map((u) => ({ ...u, videoType: 'shortform' as const })),
     ];
 
     this.logger.log(
-      `Found ${allUploads.length} pending uploads (${pendingUploads.longform.length} longform, ${pendingUploads.shorts.length} shorts)`,
+      `Found ${allUploads.length} pending uploads (${pendingUploads.longform.length} longform, ${pendingUploads.shortform.length} shortform)`,
     );
 
     if (allUploads.length === 0) {
@@ -73,7 +75,7 @@ export class PendingUploadRetryService {
 
     const results: Array<{
       title: string;
-      videoType: 'longform' | 'shorts';
+      videoType: 'longform' | 'shortform';
       success: boolean;
       videoUrl?: string;
       error?: string;
@@ -149,6 +151,20 @@ export class PendingUploadRetryService {
       `Retry process completed: ${successCount} succeeded, ${failedCount} failed out of ${allUploads.length} total`,
     );
 
+    // 모든 업로드 처리 완료 후 정리 작업 수행
+    if (successCount > 0) {
+      this.logger.log('Performing post-upload cleanup...');
+      try {
+        const cleanupResult = await this.cleanupService.cleanupAll();
+        this.logger.log(
+          `Cleanup completed: ${cleanupResult.totalFilesDeleted} files removed (pending: ${cleanupResult.pendingUploads.totalDeleted}, temp: ${cleanupResult.temp.deletedCount})`,
+        );
+      } catch (error) {
+        this.logger.error(`Cleanup failed: ${error.message}`);
+        // 정리 실패는 전체 프로세스를 중단하지 않음
+      }
+    }
+
     return {
       totalAttempted: allUploads.length,
       successCount,
@@ -164,7 +180,7 @@ export class PendingUploadRetryService {
    * @returns 업로드 결과
    */
   private async retryUpload(
-    upload: FailedUploadMetadata & { videoType: 'longform' | 'shorts' },
+    upload: FailedUploadMetadata & { videoType: 'longform' | 'shortform' },
   ): Promise<BrowserUploadResult> {
     try {
       // 비디오 파일 경로
@@ -202,13 +218,13 @@ export class PendingUploadRetryService {
   }
 
   /**
-   * 특정 타입(longform 또는 shorts)만 재업로드
+   * 특정 타입(longform 또는 shortform)만 재업로드
    *
    * @param videoType - 재업로드할 영상 타입
    * @returns 성공/실패 통계
    */
   async retryByType(
-    videoType: 'longform' | 'shorts',
+    videoType: 'longform' | 'shortform',
     maxCount?: number,
   ): Promise<{
     totalAttempted: number;
@@ -219,7 +235,7 @@ export class PendingUploadRetryService {
 
     const pendingUploads = await this.failedUploadStorageService.getPendingUploads();
     const allUploads =
-      videoType === 'longform' ? pendingUploads.longform : pendingUploads.shorts;
+      videoType === 'longform' ? pendingUploads.longform : pendingUploads.shortform;
 
     // 최대 개수 제한 적용
     const uploads = maxCount ? allUploads.slice(0, maxCount) : allUploads;
@@ -271,7 +287,7 @@ export class PendingUploadRetryService {
    */
   async getStatistics(): Promise<{
     longformCount: number;
-    shortsCount: number;
+    shortformCount: number;
     totalCount: number;
   }> {
     return await this.failedUploadStorageService.getStatistics();
