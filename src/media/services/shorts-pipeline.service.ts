@@ -59,7 +59,7 @@ export interface CreateShortsResult {
  *
  * 전체 프로세스:
  * 1. Gemini AI로 Shorts 전용 60초 스크립트 생성 (150-200자)
- * 2. Google TTS로 음성 생성 (1.0x 속도)
+ * 2. Google TTS로 음성 생성 (1.15x 속도 - 롱폼과 동일)
  * 3. 세로 영상 렌더링 (9:16 비율, 1080x1920)
  * 4. 영상 길이 검증 (59초 이하 확인)
  * 5. SEO 최적화 (제목, 설명, 해시태그)
@@ -69,6 +69,7 @@ export interface CreateShortsResult {
  * Shorts 최적화 전략:
  * - 59초 이하 길이 (Shorts 규정 준수)
  * - 롱폼과 별도의 짧은 스크립트 생성으로 품질 보장
+ * - 롱폼과 동일한 TTS 속도(1.15x)로 일관성 유지
  * - 첫 3초 Hook으로 시청자 유지율 극대화
  * - 세로 화면 최적화 (모바일 중심)
  * - 자동 SEO 최적화로 검색 노출 증대
@@ -141,7 +142,7 @@ export class ShortsPipelineService {
       const ttsResult = await this.ttsService.generateSpeechWithTimings({
         text: shortsScript,
         voice: 'FEMALE',
-        speakingRate: 1.0,
+        speakingRate: 1.15, // 롱폼과 동일한 속도
         enableTimepoints: true,
       });
       audioPath = ttsResult.audioPath;
