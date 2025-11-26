@@ -11,6 +11,9 @@ export class TextPreprocessor {
    * @returns 치환된 텍스트
    *
    * 치환 규칙:
+   * [제목 앞 번호 제거]
+   * - "1. ", "2. ", "6. " 등 → 제거
+   *
    * [현직 대통령]
    * - "李" → "이재명"
    * - "尹" → "윤석열"
@@ -40,6 +43,8 @@ export class TextPreprocessor {
    */
   static preprocessText(text: string): string {
     return text
+      // 제목 앞 번호 제거 (예: "1. ", "6. ", "10. " → 제거)
+      .replace(/^\d+\.\s+/, '')
       // 현직 대통령 이름 치환 (한자)
       .replace(/李/g, '이재명')
       .replace(/尹/g, '윤석열')
