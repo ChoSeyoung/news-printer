@@ -205,6 +205,7 @@ export class MediaPipelineService {
         backgroundImagePaths: videoBackgroundImages,
         addEndScreen: isLongForm, // 롱폼 영상에만 엔딩 화면 추가
         endScreenDuration: 10, // 10초 엔딩 화면
+        title: seoMetadata.optimizedTitle, // 한자 치환된 SEO 최적화 제목 사용
         subtitles: mergedSubtitles.length > 0 ? mergedSubtitles : undefined, // 자막 전달
       });
 
