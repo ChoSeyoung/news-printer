@@ -21,8 +21,11 @@ export interface CreateShortsOptions {
   /** 뉴스 제목 */
   title: string;
 
-  /** Reporter 대본 (Shorts 스크립트로 재사용) */
+  /** Reporter 대본 (후방 호환성 유지용, content 없으면 사용) */
   reporterScript: string;
+
+  /** 뉴스 원문 전체 (Shorts 전용 스크립트 생성용) */
+  content?: string;
 
   /** 뉴스 원문 URL */
   newsUrl?: string;
@@ -55,15 +58,17 @@ export interface CreateShortsResult {
  * YouTube Shorts 자동 제작 파이프라인
  *
  * 전체 프로세스:
- * 1. Gemini AI로 60초 요약 스크립트 생성
- * 2. Google TTS로 음성 생성
+ * 1. Gemini AI로 Shorts 전용 60초 스크립트 생성 (150-200자)
+ * 2. Google TTS로 음성 생성 (1.0x 속도)
  * 3. 세로 영상 렌더링 (9:16 비율, 1080x1920)
- * 4. SEO 최적화 (제목, 설명, 해시태그)
- * 5. YouTube Shorts 자동 업로드
- * 6. 임시 파일 정리
+ * 4. 영상 길이 검증 (59초 이하 확인)
+ * 5. SEO 최적화 (제목, 설명, 해시태그)
+ * 6. YouTube Shorts 자동 업로드 (API/Browser)
+ * 7. 임시 파일 정리
  *
  * Shorts 최적화 전략:
- * - 60초 이하 길이 (Shorts 규정 준수)
+ * - 59초 이하 길이 (Shorts 규정 준수)
+ * - 롱폼과 별도의 짧은 스크립트 생성으로 품질 보장
  * - 첫 3초 Hook으로 시청자 유지율 극대화
  * - 세로 화면 최적화 (모바일 중심)
  * - 자동 SEO 최적화로 검색 노출 증대
@@ -103,15 +108,33 @@ export class ShortsPipelineService {
     try {
       this.logger.log(`Starting Shorts creation: ${options.title}`);
 
-      // 1️⃣ Reporter 대본을 Shorts 스크립트로 재사용 (Gemini API 절약)
-      this.logger.log('Step 1: Using reporter script as Shorts script (no API call needed)');
-      const shortsScript = options.reporterScript;
+      // 1️⃣ Shorts 전용 스크립트 생성 (59초 이하 목표)
+      this.logger.log('Step 1: Generating Shorts-optimized script');
+      let shortsScript: string;
+
+      if (options.content) {
+        // 뉴스 원문이 있으면 Gemini로 Shorts 전용 스크립트 생성 (150-200자)
+        this.logger.log('   Using Gemini to generate shorts-specific script from full content');
+        shortsScript = await this.geminiService.generateShortsScript(
+          options.title,
+          options.content,
+        );
+
+        if (!shortsScript) {
+          this.logger.warn('   Gemini script generation failed, falling back to reporter script');
+          shortsScript = options.reporterScript;
+        } else {
+          this.logger.debug(`   Generated shorts script: ${shortsScript}`);
+        }
+      } else {
+        // 후방 호환성: content 없으면 reporter script 사용
+        this.logger.log('   Using reporter script as fallback (no content provided)');
+        shortsScript = options.reporterScript;
+      }
 
       if (!shortsScript) {
         throw new Error('Failed to generate Shorts script');
       }
-
-      this.logger.debug(`Generated Shorts script: ${shortsScript}`);
 
       // 2️⃣ Google TTS로 음성 생성 (타임포인트 포함)
       this.logger.log('Step 2: Generating TTS audio with timepoints');

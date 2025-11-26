@@ -110,7 +110,8 @@ export class HourlyBrowserUploadScheduleService {
           this.logger.log('   🎬 Creating and uploading shortform video...');
           const shortsResult = await this.shortsPipeline.createAndUploadShorts({
             title: article.title,
-            reporterScript: article.content,
+            reporterScript: scripts.reporter, // 후방 호환성 유지
+            content: article.content, // Shorts 전용 스크립트 생성용
             newsUrl: article.url,
             imageUrls: article.imageUrls,
           });
