@@ -278,6 +278,7 @@ export class VideoService {
           this.logger.debug(`Main content - Duration per image: ${durationPerImage} seconds`);
 
           for (let i = 0; i < validImages.length; i++) {
+            const segmentStartTime = i * durationPerImage;
             const segmentPath = await this.createImageSegment(
               validImages[i],
               durationPerImage,
@@ -287,6 +288,7 @@ export class VideoService {
               dimensions.title,
               dimensions.script,
               dimensions.subtitles,
+              segmentStartTime,
             );
             segmentPaths.push(segmentPath);
           }
@@ -302,7 +304,8 @@ export class VideoService {
             dimensions.height,
             dimensions.title,
             dimensions.script,
-            dimensions.subtitles,
+            undefined, // 엔딩 화면에는 자막 없음
+            audioDuration, // 엔딩 화면 시작 시간
           );
           segmentPaths.push(endScreenSegmentPath);
         } else {
@@ -311,6 +314,7 @@ export class VideoService {
           this.logger.debug(`Duration per image: ${durationPerImage} seconds`);
 
           for (let i = 0; i < validImages.length; i++) {
+            const segmentStartTime = i * durationPerImage;
             const segmentPath = await this.createImageSegment(
               validImages[i],
               durationPerImage,
@@ -320,6 +324,7 @@ export class VideoService {
               dimensions.title,
               dimensions.script,
               dimensions.subtitles,
+              segmentStartTime,
             );
             segmentPaths.push(segmentPath);
           }
@@ -410,6 +415,7 @@ export class VideoService {
     title?: string,
     script?: string,
     subtitles?: SubtitleTiming[],
+    segmentStartTime: number = 0,
   ): Promise<string> {
     const segmentPath = path.join(this.tempDir, `segment_${Date.now()}_${index}.mp4`);
 
@@ -421,6 +427,12 @@ export class VideoService {
 
     // 자막 추가 (가로 영상용, Shorts와 다른 레이아웃)
     if (subtitles && subtitles.length > 0 && title) {
+      const segmentEndTime = segmentStartTime + duration;
+
+      // 이 세그먼트에 속하는 자막만 필터링
+      const segmentSubtitles = subtitles.filter(subtitle => {
+        return subtitle.startTime < segmentEndTime && subtitle.endTime > segmentStartTime;
+      });
       // 제목 줄바꿈 처리 (가로 영상은 40자/줄, 최대 2줄)
       const wrappedTitle = this.wrapText(title, 40, 2);
       const escapedTitle = this.escapeFFmpegText(wrappedTitle);
@@ -433,15 +445,20 @@ export class VideoService {
       );
 
       // TTS 동기화 자막 추가 (하단 중앙)
-      for (const subtitle of subtitles) {
+      // 세그먼트 시작 시간을 기준으로 타이밍 조정
+      for (const subtitle of segmentSubtitles) {
         const wrappedSubtitle = this.wrapText(subtitle.text, 40, 2);
         const escapedSubtitle = this.escapeFFmpegText(wrappedSubtitle);
+
+        // 세그먼트 내 상대 시간으로 변환
+        const relativeStartTime = Math.max(0, subtitle.startTime - segmentStartTime);
+        const relativeEndTime = Math.min(duration, subtitle.endTime - segmentStartTime);
 
         videoFilters.push(
           `drawtext=fontfile=/System/Library/Fonts/AppleSDGothicNeo.ttc:text='${escapedSubtitle}':` +
           `fontcolor=white:fontsize=36:box=1:boxcolor=black@0.7:boxborderw=8:` +
           `x=(w-text_w)/2:y=h-th-120:line_spacing=8:` +
-          `enable='between(t,${subtitle.startTime.toFixed(2)},${subtitle.endTime.toFixed(2)})'`
+          `enable='between(t,${relativeStartTime.toFixed(2)},${relativeEndTime.toFixed(2)})'`
         );
       }
     } else if (title && script) {
