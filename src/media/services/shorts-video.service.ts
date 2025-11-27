@@ -192,9 +192,9 @@ export class ShortsVideoService {
     subtitles?: SubtitleTiming[],
   ): Promise<void> {
     return new Promise((resolve, reject) => {
-      // 제목 텍스트 줄바꿈 처리 (최대 2줄, 영상 너비 고려)
-      // 영상 너비 1080px, x=80 여백, fontsize=42 → 한 줄당 약 18자로 제한
-      const wrappedTitle = this.wrapText(title, 18, 2);
+      // 제목 텍스트 줄바꿈 처리 (최대 2줄, 영상 너비의 80% 사용)
+      // 영상 너비 1080px의 80% = 864px, fontsize=42, 한글 평균 너비 약 42px → 한 줄당 약 20자
+      const wrappedTitle = this.wrapText(title, 20, 2);
       const escapedTitle = this.escapeFFmpegText(wrappedTitle);
 
       // 제목 줄 수 계산 (줄바꿈 문자 개수 + 1)
@@ -224,12 +224,12 @@ export class ShortsVideoService {
         `x=80:y=330:line_spacing=10`,
       ];
 
-      // 시간 동기화 자막 추가 (줄 수 제한 제거 - 전체 텍스트 표시)
+      // 시간 동기화 자막 추가 (영상 너비의 80% 사용)
       if (subtitles && subtitles.length > 0) {
         // 각 문장에 대해 시간 기반 자막 추가
         for (const subtitle of subtitles) {
-          // 줄 수 제한 없이 전체 텍스트를 표시 (가독성 우선)
-          const wrappedSubtitle = this.wrapText(subtitle.text, 18);
+          // 영상 너비의 80% 사용: fontsize=36, 한글 평균 너비 약 36px → 한 줄당 약 24자
+          const wrappedSubtitle = this.wrapText(subtitle.text, 24);
           const escapedSubtitle = this.escapeFFmpegText(wrappedSubtitle);
 
           // enable='between(t,start,end)'로 시간 구간에만 표시
@@ -241,8 +241,8 @@ export class ShortsVideoService {
           );
         }
       } else {
-        // 자막 타이밍이 없으면 전체 스크립트를 고정 표시 (줄 수 제한 없음)
-        const wrappedScript = this.wrapText(script, 18);
+        // 자막 타이밍이 없으면 전체 스크립트를 고정 표시 (영상 너비의 80% 사용)
+        const wrappedScript = this.wrapText(script, 24);
         const escapedScript = this.escapeFFmpegText(wrappedScript);
 
         videoFilters.push(
