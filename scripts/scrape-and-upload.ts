@@ -109,7 +109,8 @@ async function main() {
 
             const shortsResult = await shortsPipeline.createAndUploadShorts({
               title: articleData.title,
-              reporterScript: articleData.content,
+              reporterScript: articleData.content.substring(0, 500), // 후방 호환성
+              content: articleData.content, // Shorts 전용 스크립트 생성용
               newsUrl: articleData.url,
               imageUrls: articleData.imageUrls,
             });
