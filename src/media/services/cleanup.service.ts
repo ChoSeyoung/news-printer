@@ -19,6 +19,7 @@ export class CleanupService {
   private readonly ESSENTIAL_FILES = [
     'published-news.json', // 발행된 뉴스 추적 파일
     'youtube-auth-state.json', // YouTube 인증 상태 파일
+    'youtube-quota-flag.json', // YouTube API 할당량 상태 파일
     '.gitkeep', // Git 디렉토리 유지 파일
   ];
 
