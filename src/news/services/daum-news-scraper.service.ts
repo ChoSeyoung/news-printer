@@ -5,6 +5,7 @@ import sharp from 'sharp';
 import * as path from 'path';
 import * as fs from 'fs/promises';
 import { v4 as uuidv4 } from 'uuid';
+import { KeywordAnalysisService } from './keyword-analysis.service';
 
 /**
  * 다음 뉴스 기사 데이터 인터페이스
@@ -49,7 +50,7 @@ export class DaumNewsScraperService {
     assembly: 'https://news.daum.net/assembly',
   };
 
-  constructor() {
+  constructor(private readonly keywordAnalysisService: KeywordAnalysisService) {
     this.ensureTempDir();
   }
 
@@ -130,6 +131,13 @@ export class DaumNewsScraperService {
           const article = await this.fetchArticleDetail(url, category);
           if (article) {
             articles.push(article);
+
+            // 키워드 분석 (비동기로 실행, 에러 무시)
+            this.keywordAnalysisService
+              .updateKeywordStats(article.url, article.content)
+              .catch((err) =>
+                this.logger.warn(`Keyword analysis failed for ${article.url}:`, err.message),
+              );
           }
         } catch (error) {
           this.logger.warn(`Failed to fetch article ${url}:`, error.message);
