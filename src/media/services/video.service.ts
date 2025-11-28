@@ -433,16 +433,6 @@ export class VideoService {
       const segmentSubtitles = subtitles.filter(subtitle => {
         return subtitle.startTime < segmentEndTime && subtitle.endTime > segmentStartTime;
       });
-      // 제목 줄바꿈 처리 (가로 영상은 40자/줄, 최대 2줄)
-      const wrappedTitle = this.wrapText(title, 40, 2);
-      const escapedTitle = this.escapeFFmpegText(wrappedTitle);
-
-      // 제목 자막 추가 (상단 중앙, 가로 영상용)
-      videoFilters.push(
-        `drawtext=fontfile=/System/Library/Fonts/AppleSDGothicNeo.ttc:text='${escapedTitle}':` +
-        `fontcolor=white:fontsize=48:box=1:boxcolor=black@0.6:boxborderw=10:` +
-        `x=(w-text_w)/2:y=60:line_spacing=10`
-      );
 
       // TTS 동기화 자막 추가 (하단 중앙)
       // 세그먼트 시작 시간을 기준으로 타이밍 조정
@@ -461,17 +451,8 @@ export class VideoService {
           `enable='between(t,${relativeStartTime.toFixed(2)},${relativeEndTime.toFixed(2)})'`
         );
       }
-    } else if (title && script) {
-      // 자막 타이밍이 없으면 제목과 스크립트를 고정 표시
-      const wrappedTitle = this.wrapText(title, 40, 2);
-      const escapedTitle = this.escapeFFmpegText(wrappedTitle);
-
-      videoFilters.push(
-        `drawtext=fontfile=/System/Library/Fonts/AppleSDGothicNeo.ttc:text='${escapedTitle}':` +
-        `fontcolor=white:fontsize=48:box=1:boxcolor=black@0.6:boxborderw=10:` +
-        `x=(w-text_w)/2:y=60:line_spacing=10`
-      );
-
+    } else if (script) {
+      // 자막 타이밍이 없으면 스크립트만 고정 표시 (제목 제거)
       const wrappedScript = this.wrapText(script, 40, 2);
       const escapedScript = this.escapeFFmpegText(wrappedScript);
 
@@ -620,5 +601,6 @@ export class VideoService {
       .replace(/\[/g, '\\\\[')
       .replace(/\]/g, '\\\\]')
       .replace(/"/g, '\\\\"');
+      // 줄바꿈은 유지 (FFmpeg drawtext에서 멀티라인 지원)
   }
 }
