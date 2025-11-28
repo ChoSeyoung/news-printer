@@ -12,6 +12,7 @@ import { PublishedNewsTrackingService } from './published-news-tracking.service'
 import { YoutubeQuotaManagerService } from './youtube-quota-manager.service';
 import { VideoDurationUtil } from '../../common/utils/video-duration.util';
 import { TextPreprocessor } from '../../common/utils/text-preprocessor.util';
+import { KeywordAnalysisService } from '../../news/services/keyword-analysis.service';
 import { promises as fs } from 'fs';
 
 /**
@@ -90,6 +91,7 @@ export class ShortsPipelineService {
     private readonly browserUploadService: YoutubeBrowserUploadService,
     private readonly publishedNewsTrackingService: PublishedNewsTrackingService,
     private readonly quotaManager: YoutubeQuotaManagerService,
+    private readonly keywordAnalysisService: KeywordAnalysisService,
   ) {}
 
   /**
@@ -290,6 +292,15 @@ export class ShortsPipelineService {
               );
             }
 
+            // 키워드 분석 (브라우저 업로드 성공 시에만 실행)
+            if (options.newsUrl && options.content) {
+              this.keywordAnalysisService
+                .updateKeywordStats(options.newsUrl, options.content)
+                .catch((err) =>
+                  this.logger.warn(`Keyword analysis failed for ${options.newsUrl}:`, err.message),
+                );
+            }
+
             // Send Telegram notification
             await this.telegramNotificationService.sendUploadSuccess({
               title: options.title,
@@ -344,6 +355,25 @@ export class ShortsPipelineService {
       this.logger.log(
         `✅ Shorts creation completed in ${duration}s: ${uploadResult.videoUrl}`,
       );
+
+      // Track published news
+      if (options.newsUrl && uploadResult.videoUrl) {
+        await this.publishedNewsTrackingService.markAsPublished(
+          options.newsUrl,
+          options.title,
+          uploadResult.videoId,
+          uploadResult.videoUrl,
+        );
+      }
+
+      // 키워드 분석 (API 업로드 성공 시에만 실행)
+      if (options.newsUrl && options.content) {
+        this.keywordAnalysisService
+          .updateKeywordStats(options.newsUrl, options.content)
+          .catch((err) =>
+            this.logger.warn(`Keyword analysis failed for ${options.newsUrl}:`, err.message),
+          );
+      }
 
       // Send Telegram notification
       await this.telegramNotificationService.sendUploadSuccess({

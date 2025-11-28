@@ -11,6 +11,7 @@ import { GeminiService } from '../../news/services/gemini.service';
 import { TelegramNotificationService } from './telegram-notification.service';
 import { YoutubeBrowserUploadService } from './youtube-browser-upload.service';
 import { YoutubeQuotaManagerService } from './youtube-quota-manager.service';
+import { KeywordAnalysisService } from '../../news/services/keyword-analysis.service';
 
 export interface PublishNewsOptions {
   title: string;
@@ -63,6 +64,7 @@ export class MediaPipelineService {
     private readonly telegramNotificationService: TelegramNotificationService,
     private readonly browserUploadService: YoutubeBrowserUploadService,
     private readonly quotaManager: YoutubeQuotaManagerService,
+    private readonly keywordAnalysisService: KeywordAnalysisService,
   ) {}
 
   /**
@@ -278,6 +280,15 @@ export class MediaPipelineService {
               );
             }
 
+            // 키워드 분석 (브라우저 업로드 성공 시에만 실행)
+            if (options.newsUrl && options.newsContent) {
+              this.keywordAnalysisService
+                .updateKeywordStats(options.newsUrl, options.newsContent)
+                .catch((err) =>
+                  this.logger.warn(`Keyword analysis failed for ${options.newsUrl}:`, err.message),
+                );
+            }
+
             // Send Telegram notification
             await this.telegramNotificationService.sendUploadSuccess({
               title: options.title,
@@ -352,6 +363,15 @@ export class MediaPipelineService {
             uploadResult.videoId,
             uploadResult.videoUrl,
           );
+        }
+
+        // 키워드 분석 (업로드 성공 시에만 실행)
+        if (options.newsUrl && options.newsContent) {
+          this.keywordAnalysisService
+            .updateKeywordStats(options.newsUrl, options.newsContent)
+            .catch((err) =>
+              this.logger.warn(`Keyword analysis failed for ${options.newsUrl}:`, err.message),
+            );
         }
 
         // Send Telegram notification
