@@ -409,6 +409,20 @@ export class YoutubeBrowserUploadService {
       // 5️⃣ 메타데이터 입력
       this.logger.log('Step 5/7: Entering metadata...');
 
+      // 오버레이가 사라질 때까지 대기 (dialog-scrim이 클릭을 가로막는 문제 해결)
+      try {
+        await page.locator('div.dialog-scrim').waitFor({
+          state: 'hidden',
+          timeout: 10000
+        });
+        this.logger.debug('Dialog overlay disappeared');
+      } catch (error) {
+        this.logger.warn('Dialog overlay did not disappear, continuing anyway...');
+      }
+
+      // 추가 안전 대기
+      await this.randomDelay(1000, 2000);
+
       // 제목과 설명 입력 - div[id="textbox"]를 모두 찾아서 순서대로 입력
       const textboxes = await page.locator('div[id="textbox"]').all();
 

@@ -596,7 +596,7 @@ export class VideoService {
   private escapeFFmpegText(text: string): string {
     return text
       .replace(/\\/g, '\\\\\\\\\\\\\\\\')
-      .replace(/'/g, "'\\\\'")
+      .replace(/'/g, '') // 작은따옴표는 제거 (FFmpeg enable 파라미터와 충돌 방지)
       .replace(/:/g, '\\\\:')
       .replace(/\[/g, '\\\\[')
       .replace(/\]/g, '\\\\]')
