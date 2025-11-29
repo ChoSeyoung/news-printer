@@ -274,9 +274,8 @@ export class ShortsVideoService {
           this.logger.debug('FFmpeg command: ' + commandLine);
         })
         .on('progress', (progress) => {
-          this.logger.debug(
-            `Processing: ${progress.percent?.toFixed(2)}% done`,
-          );
+          const percent = progress.percent ? progress.percent.toFixed(2) : '0.00';
+          this.logger.debug(`Processing: ${percent}% done`);
         })
         .on('end', () => {
           this.logger.log('Shorts video rendering completed');
