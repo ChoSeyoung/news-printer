@@ -13,6 +13,7 @@ import { YoutubeQuotaManagerService } from './youtube-quota-manager.service';
 import { VideoDurationUtil } from '../../common/utils/video-duration.util';
 import { TextPreprocessor } from '../../common/utils/text-preprocessor.util';
 import { KeywordAnalysisService } from '../../news/services/keyword-analysis.service';
+import { KeywordImageMatcherService } from './keyword-image-matcher.service';
 import { promises as fs } from 'fs';
 
 /**
@@ -92,6 +93,7 @@ export class ShortsPipelineService {
     private readonly publishedNewsTrackingService: PublishedNewsTrackingService,
     private readonly quotaManager: YoutubeQuotaManagerService,
     private readonly keywordAnalysisService: KeywordAnalysisService,
+    private readonly keywordImageMatcher: KeywordImageMatcherService,
   ) {}
 
   /**
@@ -153,42 +155,78 @@ export class ShortsPipelineService {
       // 3️⃣ 세로 영상 렌더링 (9:16 비율)
       this.logger.log('Step 3: Rendering vertical video (9:16 aspect ratio)');
 
-      // 기사 이미지 사용, 없으면 기본 이미지 (여러 개 다운로드하여 전환 효과)
+      // 3️⃣ 키워드 기반 이미지 선택 (자막 구간별 전환용)
+      this.logger.log('Step 3-2: Finding keyword-based images for transitions');
       let imagePaths: string[] = [];
-      this.logger.debug(`Image URLs received: ${JSON.stringify(options.imageUrls)}`);
 
-      if (options.imageUrls && options.imageUrls.length > 0) {
-        // 로고/플레이스홀더 이미지 필터링 (logo, bg_, icon 등 제외)
-        const validImageUrls = options.imageUrls.filter(url => {
-          const lowerUrl = url.toLowerCase();
-          return !lowerUrl.includes('logo') &&
-                 !lowerUrl.includes('bg_') &&
-                 !lowerUrl.includes('icon') &&
-                 !lowerUrl.includes('placeholder') &&
-                 (lowerUrl.endsWith('.jpg') || lowerUrl.endsWith('.jpeg') || lowerUrl.endsWith('.png') || lowerUrl.endsWith('.webp'));
-        });
+      if (options.content) {
+        // 기사 본문에서 키워드 기반 이미지 검색 (최대 3개)
+        const keywordImages = await this.keywordImageMatcher.findImagesForContent(
+          options.content,
+          3
+        );
 
-        this.logger.debug(`Filtered image URLs: ${JSON.stringify(validImageUrls)}`);
-
-        // 최대 3개 이미지 다운로드 (자막 구간별 전환용)
-        const imageUrlsToDownload = validImageUrls.length > 0
-          ? validImageUrls.slice(0, 3)  // 필터링된 이미지 최대 3개
-          : options.imageUrls.slice(0, 3);  // 필터링 실패 시 원본 최대 3개
-
-        this.logger.log(`Downloading ${imageUrlsToDownload.length} article images for transitions`);
-        downloadedImagePaths = await this.imageSearchService.downloadImagesFromUrls(imageUrlsToDownload);
-        this.logger.debug(`Downloaded images: ${JSON.stringify(downloadedImagePaths)}`);
-
-        if (downloadedImagePaths.length > 0) {
-          imagePaths = downloadedImagePaths;
-          this.logger.log(`Using ${imagePaths.length} article images for video transitions`);
+        if (keywordImages.length > 0) {
+          imagePaths = keywordImages;
+          this.logger.log(`Using ${imagePaths.length} keyword-based images for transitions`);
         } else {
-          this.logger.warn('Image download failed, using default image');
-          imagePaths = [await this.getDefaultShortsImage()];
+          this.logger.warn('No keyword images found, falling back to article images');
+
+          // 키워드 이미지 없으면 기사 이미지로 폴백
+          if (options.imageUrls && options.imageUrls.length > 0) {
+            const validImageUrls = options.imageUrls.filter(url => {
+              const lowerUrl = url.toLowerCase();
+              return !lowerUrl.includes('logo') &&
+                     !lowerUrl.includes('bg_') &&
+                     !lowerUrl.includes('icon') &&
+                     !lowerUrl.includes('placeholder') &&
+                     (lowerUrl.endsWith('.jpg') || lowerUrl.endsWith('.jpeg') || lowerUrl.endsWith('.png') || lowerUrl.endsWith('.webp'));
+            });
+
+            const imageUrlsToDownload = validImageUrls.length > 0
+              ? validImageUrls.slice(0, 3)
+              : options.imageUrls.slice(0, 3);
+
+            this.logger.log(`Downloading ${imageUrlsToDownload.length} article images`);
+            downloadedImagePaths = await this.imageSearchService.downloadImagesFromUrls(imageUrlsToDownload);
+
+            if (downloadedImagePaths.length > 0) {
+              imagePaths = downloadedImagePaths;
+              this.logger.log(`Using ${imagePaths.length} article images`);
+            } else {
+              imagePaths = [await this.getDefaultShortsImage()];
+            }
+          } else {
+            imagePaths = [await this.getDefaultShortsImage()];
+          }
         }
       } else {
-        this.logger.warn('No article images available, using default image');
-        imagePaths = [await this.getDefaultShortsImage()];
+        // content 없으면 기사 이미지 사용 (후방 호환)
+        this.logger.warn('No content provided, using article images');
+        if (options.imageUrls && options.imageUrls.length > 0) {
+          const validImageUrls = options.imageUrls.filter(url => {
+            const lowerUrl = url.toLowerCase();
+            return !lowerUrl.includes('logo') &&
+                   !lowerUrl.includes('bg_') &&
+                   !lowerUrl.includes('icon') &&
+                   !lowerUrl.includes('placeholder') &&
+                   (lowerUrl.endsWith('.jpg') || lowerUrl.endsWith('.jpeg') || lowerUrl.endsWith('.png') || lowerUrl.endsWith('.webp'));
+          });
+
+          const imageUrlsToDownload = validImageUrls.length > 0
+            ? validImageUrls.slice(0, 3)
+            : options.imageUrls.slice(0, 3);
+
+          downloadedImagePaths = await this.imageSearchService.downloadImagesFromUrls(imageUrlsToDownload);
+
+          if (downloadedImagePaths.length > 0) {
+            imagePaths = downloadedImagePaths;
+          } else {
+            imagePaths = [await this.getDefaultShortsImage()];
+          }
+        } else {
+          imagePaths = [await this.getDefaultShortsImage()];
+        }
       }
 
       videoPath = await this.shortsVideoService.createShortsVideo(

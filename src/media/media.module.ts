@@ -19,6 +19,7 @@ import { TelegramNotificationService } from './services/telegram-notification.se
 import { PendingUploadRetryService } from './services/pending-upload-retry.service';
 import { CleanupService } from './services/cleanup.service';
 import { YoutubeQuotaManagerService } from './services/youtube-quota-manager.service';
+import { KeywordImageMatcherService } from './services/keyword-image-matcher.service';
 import { NewsModule } from '../news/news.module';
 
 @Module({
@@ -43,6 +44,7 @@ import { NewsModule } from '../news/news.module';
     PendingUploadRetryService,
     CleanupService,
     YoutubeQuotaManagerService,
+    KeywordImageMatcherService,
   ],
   exports: [MediaPipelineService, PublishedNewsTrackingService, ShortsPipelineService, YoutubeBrowserUploadService, TelegramNotificationService, PendingUploadRetryService, CleanupService, YoutubeQuotaManagerService],
 })
