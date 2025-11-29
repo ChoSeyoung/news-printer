@@ -153,8 +153,8 @@ export class ShortsPipelineService {
       // 3️⃣ 세로 영상 렌더링 (9:16 비율)
       this.logger.log('Step 3: Rendering vertical video (9:16 aspect ratio)');
 
-      // 기사 이미지 사용, 없으면 기본 이미지
-      let imagePath: string;
+      // 기사 이미지 사용, 없으면 기본 이미지 (여러 개 다운로드하여 전환 효과)
+      let imagePaths: string[] = [];
       this.logger.debug(`Image URLs received: ${JSON.stringify(options.imageUrls)}`);
 
       if (options.imageUrls && options.imageUrls.length > 0) {
@@ -170,35 +170,30 @@ export class ShortsPipelineService {
 
         this.logger.debug(`Filtered image URLs: ${JSON.stringify(validImageUrls)}`);
 
-        // 필터링된 이미지 중 첫 번째 시도, 없으면 원본 중 두 번째 시도
-        let imageUrlToDownload: string | undefined;
-        if (validImageUrls.length > 0) {
-          imageUrlToDownload = validImageUrls[0];
-        } else if (options.imageUrls.length > 1) {
-          imageUrlToDownload = options.imageUrls[1]; // 첫 번째가 로고일 수 있으므로 두 번째 시도
-        } else {
-          imageUrlToDownload = options.imageUrls[0];
-        }
+        // 최대 3개 이미지 다운로드 (자막 구간별 전환용)
+        const imageUrlsToDownload = validImageUrls.length > 0
+          ? validImageUrls.slice(0, 3)  // 필터링된 이미지 최대 3개
+          : options.imageUrls.slice(0, 3);  // 필터링 실패 시 원본 최대 3개
 
-        this.logger.log(`Downloading article image: ${imageUrlToDownload}`);
-        downloadedImagePaths = await this.imageSearchService.downloadImagesFromUrls([imageUrlToDownload]);
+        this.logger.log(`Downloading ${imageUrlsToDownload.length} article images for transitions`);
+        downloadedImagePaths = await this.imageSearchService.downloadImagesFromUrls(imageUrlsToDownload);
         this.logger.debug(`Downloaded images: ${JSON.stringify(downloadedImagePaths)}`);
 
         if (downloadedImagePaths.length > 0) {
-          imagePath = downloadedImagePaths[0];
-          this.logger.log(`Using article image: ${imagePath}`);
+          imagePaths = downloadedImagePaths;
+          this.logger.log(`Using ${imagePaths.length} article images for video transitions`);
         } else {
           this.logger.warn('Image download failed, using default image');
-          imagePath = await this.getDefaultShortsImage();
+          imagePaths = [await this.getDefaultShortsImage()];
         }
       } else {
         this.logger.warn('No article images available, using default image');
-        imagePath = await this.getDefaultShortsImage();
+        imagePaths = [await this.getDefaultShortsImage()];
       }
 
       videoPath = await this.shortsVideoService.createShortsVideo(
         audioPath,
-        imagePath,
+        imagePaths,
         options.title,
         shortsScript,
         subtitles,

@@ -54,7 +54,7 @@ export class ShortsVideoService {
    * Shorts 비디오 생성
    *
    * @param audioPath TTS 음성 파일 경로
-   * @param imagePath 배경 이미지 경로
+   * @param imagePaths 배경 이미지 경로 (단일 또는 여러 이미지)
    * @param title 뉴스 제목 (자막용)
    * @param script Shorts 스크립트 (자막용)
    * @param subtitles 자막 타이밍 정보 (옵션)
@@ -62,7 +62,7 @@ export class ShortsVideoService {
    */
   async createShortsVideo(
     audioPath: string,
-    imagePath: string,
+    imagePaths: string | string[],
     title: string,
     script: string,
     subtitles?: SubtitleTiming[],
@@ -71,9 +71,12 @@ export class ShortsVideoService {
     const outputPath = path.join(this.outputDir, `shorts_${timestamp}.mp4`);
 
     try {
+      // 이미지 경로 배열로 정규화
+      const imagePathArray = Array.isArray(imagePaths) ? imagePaths : [imagePaths];
+
       this.logger.log('Starting Shorts video creation');
       this.logger.debug(`Audio: ${audioPath}`);
-      this.logger.debug(`Image: ${imagePath}`);
+      this.logger.debug(`Images: ${JSON.stringify(imagePathArray)}`);
       this.logger.debug(`Output: ${outputPath}`);
 
       // 오디오 길이 확인 (60초 제한)
@@ -87,7 +90,7 @@ export class ShortsVideoService {
       // 세로 영상 생성 (9:16 비율)
       await this.renderVerticalVideo(
         audioPath,
-        imagePath,
+        imagePathArray,
         title,
         script,
         outputPath,
@@ -178,13 +181,14 @@ export class ShortsVideoService {
    *
    * FFmpeg 필터 체인:
    * 1. 이미지 스케일 및 크롭 (1080x1920 세로 중심)
-   * 2. 제목 자막 추가 (상단, 대형 폰트)
-   * 3. 본문 스크립트 자막 추가 (하단, 시간 동기화)
-   * 4. 오디오 합성
+   * 2. 자막 타이밍에 맞춰 이미지 전환 (여러 이미지 사용 시)
+   * 3. 제목 자막 추가 (상단, 대형 폰트)
+   * 4. 본문 스크립트 자막 추가 (하단, 시간 동기화)
+   * 5. 오디오 합성
    */
   private async renderVerticalVideo(
     audioPath: string,
-    imagePath: string,
+    imagePaths: string[],
     title: string,
     script: string,
     outputPath: string,
@@ -203,6 +207,46 @@ export class ShortsVideoService {
       // 하이라이트 바 높이 동적 계산
       // 60px + (줄 수 * 60px)
       const highlightBarHeight = 60 + (titleLineCount * 60);
+
+      // 이미지 개수와 자막 타이밍에 따른 이미지 전환 구간 계산
+      let imageTimings: Array<{ imagePath: string; startTime: number; endTime: number }> = [];
+
+      if (imagePaths.length > 1 && subtitles && subtitles.length > 0) {
+        // 자막 타이밍에 맞춰 이미지 할당
+        const imagesPerSubtitle = Math.ceil(imagePaths.length / subtitles.length);
+
+        for (let i = 0; i < subtitles.length; i++) {
+          const imageIndex = Math.min(Math.floor(i / imagesPerSubtitle), imagePaths.length - 1);
+          imageTimings.push({
+            imagePath: imagePaths[imageIndex],
+            startTime: subtitles[i].startTime,
+            endTime: subtitles[i].endTime,
+          });
+        }
+      } else if (imagePaths.length > 1) {
+        // 자막이 없으면 균등 분할
+        const timePerImage = duration / imagePaths.length;
+        for (let i = 0; i < imagePaths.length; i++) {
+          imageTimings.push({
+            imagePath: imagePaths[i],
+            startTime: i * timePerImage,
+            endTime: (i + 1) * timePerImage,
+          });
+        }
+      } else {
+        // 이미지가 하나면 전체 구간 사용
+        imageTimings.push({
+          imagePath: imagePaths[0],
+          startTime: 0,
+          endTime: duration,
+        });
+      }
+
+      this.logger.debug(`Image transition timings: ${JSON.stringify(imageTimings.map(t => ({
+        image: path.basename(t.imagePath),
+        start: t.startTime.toFixed(2),
+        end: t.endTime.toFixed(2)
+      })))}`);
 
       // FFmpeg 필터 체인 구성
       const videoFilters = [
@@ -252,24 +296,83 @@ export class ShortsVideoService {
         );
       }
 
-      ffmpeg()
-        .input(imagePath)
-        .inputOptions([
-          '-loop 1', // 이미지 루프
-          '-t ' + duration, // 오디오 길이만큼
-        ])
-        .input(audioPath)
-        .videoCodec('libx264')
-        .audioCodec('aac')
-        .audioBitrate('128k')
-        .outputOptions([
-          '-vf', videoFilters.join(','),
-          '-pix_fmt yuv420p', // 호환성 최대화
-          '-preset fast', // 빠른 인코딩
-          '-crf 23', // 고품질
-          '-shortest', // 오디오 길이에 맞춤
-        ])
-        .output(outputPath)
+      // FFmpeg 명령 구성
+      const command = ffmpeg();
+
+      // 여러 이미지 입력 처리
+      if (imagePaths.length > 1 && subtitles && subtitles.length > 0) {
+        // 복잡한 필터 그래프로 이미지 전환 구현
+        const complexFilters: string[] = [];
+
+        // 각 이미지를 입력으로 추가하고 스케일 처리
+        const uniqueImages = [...new Set(imageTimings.map(t => t.imagePath))];
+        uniqueImages.forEach((imgPath, idx) => {
+          command.input(imgPath).inputOptions(['-loop', '1', '-t', duration.toString()]);
+          complexFilters.push(
+            `[${idx}:v]scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2:black[img${idx}]`
+          );
+        });
+
+        // 자막 구간별로 이미지 선택 및 블렌딩
+        let previousOutput = 'img0';
+        for (let i = 0; i < imageTimings.length - 1; i++) {
+          const currentImageIndex = uniqueImages.indexOf(imageTimings[i].imagePath);
+          const nextImageIndex = uniqueImages.indexOf(imageTimings[i + 1].imagePath);
+
+          if (currentImageIndex !== nextImageIndex) {
+            // 이미지가 바뀌는 구간에서 페이드 전환
+            const fadeStart = imageTimings[i + 1].startTime;
+            const fadeDuration = 0.5; // 0.5초 페이드
+
+            complexFilters.push(
+              `[${previousOutput}][img${nextImageIndex}]xfade=transition=fade:duration=${fadeDuration}:offset=${fadeStart}[v${i}]`
+            );
+            previousOutput = `v${i}`;
+          }
+        }
+
+        // 최종 비디오 스트림에 자막 필터 적용
+        const finalFilters = videoFilters.map(f =>
+          f.replace('scale=1080:1920:force_original_aspect_ratio=decrease', '')
+           .replace('pad=1080:1920:(ow-iw)/2:(oh-ih)/2:black', '')
+        ).filter(f => f.trim().length > 0);
+
+        complexFilters.push(`[${previousOutput}]${finalFilters.join(',')}[outv]`);
+
+        command
+          .input(audioPath)
+          .complexFilter(complexFilters, 'outv')
+          .outputOptions(['-map', '[outv]', '-map', `${uniqueImages.length}:a`])
+          .videoCodec('libx264')
+          .audioCodec('aac')
+          .audioBitrate('128k')
+          .outputOptions([
+            '-pix_fmt', 'yuv420p',
+            '-preset', 'fast',
+            '-crf', '23',
+            '-shortest',
+          ])
+          .output(outputPath);
+      } else {
+        // 단일 이미지 또는 자막 없는 경우 (기존 방식)
+        command
+          .input(imagePaths[0])
+          .inputOptions(['-loop', '1', '-t', duration.toString()])
+          .input(audioPath)
+          .videoCodec('libx264')
+          .audioCodec('aac')
+          .audioBitrate('128k')
+          .outputOptions([
+            '-vf', videoFilters.join(','),
+            '-pix_fmt', 'yuv420p',
+            '-preset', 'fast',
+            '-crf', '23',
+            '-shortest',
+          ])
+          .output(outputPath);
+      }
+
+      command
         .on('start', (commandLine) => {
           this.logger.debug('FFmpeg command: ' + commandLine);
         })
