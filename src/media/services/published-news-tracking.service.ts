@@ -6,8 +6,16 @@ export interface PublishedNewsRecord {
   url: string;
   title: string;
   publishedAt: string;
-  videoId?: string;
-  videoUrl?: string;
+  longform?: {
+    videoId: string;
+    videoUrl: string;
+    uploadedAt: string;
+  };
+  shortform?: {
+    videoId: string;
+    videoUrl: string;
+    uploadedAt: string;
+  };
 }
 
 @Injectable()
@@ -118,34 +126,52 @@ export class PublishedNewsTrackingService {
    * Mark a news article as published
    * @param url - News article URL
    * @param title - News title
-   * @param videoId - YouTube video ID (optional)
-   * @param videoUrl - YouTube video URL (optional)
+   * @param videoType - 'longform' or 'shortform'
+   * @param videoId - YouTube video ID
+   * @param videoUrl - YouTube video URL
    */
   async markAsPublished(
     url: string,
     title: string,
-    videoId?: string,
-    videoUrl?: string,
+    videoType: 'longform' | 'shortform',
+    videoId: string,
+    videoUrl: string,
   ): Promise<void> {
     try {
-      const record: PublishedNewsRecord = {
-        url,
-        title,
-        publishedAt: new Date().toISOString(),
+      // 기존 레코드 가져오기 또는 새로 생성
+      let record = this.publishedNews.get(url);
+
+      if (!record) {
+        record = {
+          url,
+          title,
+          publishedAt: new Date().toISOString(),
+        };
+      }
+
+      // 비디오 타입에 따라 정보 업데이트
+      const videoInfo = {
         videoId,
         videoUrl,
+        uploadedAt: new Date().toISOString(),
       };
+
+      if (videoType === 'longform') {
+        record.longform = videoInfo;
+      } else {
+        record.shortform = videoInfo;
+      }
 
       this.publishedNews.set(url, record);
 
-      // 제목 인덱스에도 추가
-      if (title) {
+      // 제목 인덱스에도 추가 (처음 등록 시에만)
+      if (title && !this.publishedTitles.has(this.normalizeTitle(title))) {
         this.publishedTitles.add(this.normalizeTitle(title));
       }
 
       await this.savePublishedNews();
 
-      this.logger.log(`Marked as published: ${title}`);
+      this.logger.log(`Marked as published (${videoType}): ${title}`);
     } catch (error) {
       this.logger.error('Failed to mark as published:', error.message);
     }

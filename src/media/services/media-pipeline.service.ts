@@ -92,13 +92,20 @@ export class MediaPipelineService {
         if (this.publishedNewsTrackingService.isAlreadyPublished(options.newsUrl)) {
           const existingRecord = this.publishedNewsTrackingService.getPublishedRecord(options.newsUrl);
           this.logger.warn(`News already published: ${options.title}`);
-          this.logger.warn(`Previous upload: ${existingRecord?.videoUrl || 'URL not available'}`);
+
+          // 롱폼 업로드 정보 표시
+          if (existingRecord?.longform) {
+            this.logger.warn(`Previous longform upload: ${existingRecord.longform.videoUrl}`);
+          }
+          if (existingRecord?.shortform) {
+            this.logger.warn(`Previous shortform upload: ${existingRecord.shortform.videoUrl}`);
+          }
 
           return {
             success: false,
             error: 'This news article has already been published',
-            videoUrl: existingRecord?.videoUrl,
-            videoId: existingRecord?.videoId,
+            videoUrl: existingRecord?.longform?.videoUrl || existingRecord?.shortform?.videoUrl,
+            videoId: existingRecord?.longform?.videoId || existingRecord?.shortform?.videoId,
           };
         }
       }
@@ -271,10 +278,11 @@ export class MediaPipelineService {
             }
 
             // Track published news
-            if (options.newsUrl && browserResult.videoUrl) {
+            if (options.newsUrl && browserResult.videoUrl && browserResult.videoId) {
               await this.publishedNewsTrackingService.markAsPublished(
                 options.newsUrl,
                 options.title,
+                'longform',
                 browserResult.videoId,
                 browserResult.videoUrl,
               );
@@ -356,10 +364,11 @@ export class MediaPipelineService {
         }
 
         // Mark news as published to prevent duplicates
-        if (options.newsUrl) {
+        if (options.newsUrl && uploadResult.videoId && uploadResult.videoUrl) {
           await this.publishedNewsTrackingService.markAsPublished(
             options.newsUrl,
             options.title,
+            'longform',
             uploadResult.videoId,
             uploadResult.videoUrl,
           );

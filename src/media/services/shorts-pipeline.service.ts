@@ -316,10 +316,11 @@ export class ShortsPipelineService {
             await this.cleanupTempFiles(audioPath, videoPath, ...downloadedImagePaths);
 
             // Track published news
-            if (options.newsUrl && browserResult.videoUrl) {
+            if (options.newsUrl && browserResult.videoUrl && browserResult.videoId) {
               await this.publishedNewsTrackingService.markAsPublished(
                 options.newsUrl,
                 options.title,
+                'shortform',
                 browserResult.videoId,
                 browserResult.videoUrl,
               );
@@ -390,10 +391,11 @@ export class ShortsPipelineService {
       );
 
       // Track published news
-      if (options.newsUrl && uploadResult.videoUrl) {
+      if (options.newsUrl && uploadResult.videoUrl && uploadResult.videoId) {
         await this.publishedNewsTrackingService.markAsPublished(
           options.newsUrl,
           options.title,
+          'shortform',
           uploadResult.videoId,
           uploadResult.videoUrl,
         );
