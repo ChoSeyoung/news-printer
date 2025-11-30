@@ -170,7 +170,11 @@ export class GeminiService {
 규칙:
 - anchor: 첫3초에 핵심 전달, 기자연결멘트 제외
 - reporter: 견해/분석 포함, 마무리멘트 제외
-- TTS용 자연스러운 문체
+- TTS용 자연스러운 문체 (특수문자 사용 금지)
+- 따옴표, 괄호, 하이픈 등 특수기호 사용하지 말 것
+- 매끄럽게 이어지는 문장 구성
+- 숫자는 한글로 풀어쓰기 (예: 3개 → 세 개)
+- 제목을 그대로 읽지 말고 바로 본문 내용으로 시작
 
 기사:
 ${truncatedContent}`;
@@ -218,10 +222,10 @@ ${truncatedContent}`;
         ? parsed.reporter.join('\n\n')
         : parsed.reporter;
 
-      // 이스케이프 문자 제거 후 반환
+      // 이스케이프 문자 제거 및 TTS용 정제 후 반환
       return {
-        anchor: this.removeEscapeCharacters(anchorText),
-        reporter: this.removeEscapeCharacters(reporterText),
+        anchor: this.normalizeTextForTTS(this.removeEscapeCharacters(anchorText)),
+        reporter: this.normalizeTextForTTS(this.removeEscapeCharacters(reporterText)),
       };
     } catch (error) {
       this.logger.error('Failed to parse script response:', error.message);
@@ -396,13 +400,17 @@ ${truncatedContent}`;
 - 기사 내용이 부족하면 제목만 바탕으로 간단히 요약하세요
 
 규칙:
-- 뉴스 앵커 말투 (예: "~했습니다", "~로 알려졌습니다", "~라고 전했습니다")
+- 뉴스 앵커 말투 (예: ~했습니다, ~로 알려졌습니다, ~라고 전했습니다)
 - 첫 문장에 핵심 내용 Hook (시청자 이탈 방지)
 - 150-200자 (60초 TTS 분량)
 - 객관적이고 신뢰감 있는 톤
 - 짧고 명확한 문장으로 구성
-- "~입니다" 종결어미 사용
+- ~입니다 종결어미 사용
 - 마무리멘트나 인사말 제외
+- TTS용 자연스러운 문체 (특수문자 사용 금지)
+- 따옴표, 괄호, 하이픈 등 특수기호 사용하지 말 것
+- 숫자는 한글로 풀어쓰기 (예: 3개 → 세 개)
+- 제목을 그대로 읽지 말고 바로 본문 내용으로 시작
 
 기사:
 ${truncatedContent}`;
@@ -434,8 +442,8 @@ ${truncatedContent}`;
         return '';
       }
 
-      // 이스케이프 문자 제거 후 반환
-      return this.removeEscapeCharacters(parsed.script);
+      // 이스케이프 문자 제거 및 TTS용 정제 후 반환
+      return this.normalizeTextForTTS(this.removeEscapeCharacters(parsed.script));
     } catch (error) {
       this.logger.error('Failed to parse Shorts script response:', error.message);
       this.logger.debug('Raw response text:', text);
@@ -465,5 +473,45 @@ ${truncatedContent}`;
       .replace(/\\"/g, '"')
       .replace(/\\'/g, "'")
       .replace(/\\\\/g, '\\');
+  }
+
+  /**
+   * TTS가 자연스럽게 읽을 수 있도록 텍스트를 정제합니다
+   *
+   * @param text - 원본 텍스트
+   * @returns 정제된 텍스트
+   *
+   * 정제 항목:
+   * - 특수문자 제거 (괄호, 따옴표, 기타 기호)
+   * - 여러 개의 공백을 하나로 통합
+   * - 문장 끝 정리 (마침표, 느낌표, 물음표만 유지)
+   * - 불필요한 개행 제거
+   * - 숫자와 문자 사이 띄어쓰기 정리
+   */
+  private normalizeTextForTTS(text: string): string {
+    return text
+      // 따옴표 제거 (큰따옴표, 작은따옴표, 전각 따옴표)
+      .replace(/["'"""'']/g, '')
+      // 괄호와 내용 제거 (영어, 한자, 부가 설명 등)
+      .replace(/\([^)]*\)/g, '')
+      .replace(/\[[^\]]*\]/g, '')
+      .replace(/\{[^}]*\}/g, '')
+      // 특수기호 제거 (하이픈, 슬래시, 앰퍼샌드 등)
+      .replace(/[~`!@#$%^&*_+=|\\<>]/g, '')
+      .replace(/[-–—]/g, ' ') // 하이픈 계열은 공백으로
+      .replace(/[/]/g, ' ') // 슬래시도 공백으로
+      // 연속된 공백을 하나로 통합
+      .replace(/\s+/g, ' ')
+      // 문장 부호 앞뒤 공백 정리
+      .replace(/\s*([.,!?])\s*/g, '$1 ')
+      // 문장 끝 이후 공백 정리
+      .replace(/([.!?])\s+/g, '$1 ')
+      // 개행 문자를 공백으로 변환 (자연스러운 흐름)
+      .replace(/\n+/g, ' ')
+      // 숫자와 한글 사이 띄어쓰기 통일
+      .replace(/(\d)\s*([가-힣])/g, '$1 $2')
+      .replace(/([가-힣])\s*(\d)/g, '$1 $2')
+      // 앞뒤 공백 제거
+      .trim();
   }
 }

@@ -195,18 +195,17 @@ export class ShortsVideoService {
     duration: number,
     subtitles?: SubtitleTiming[],
   ): Promise<void> {
-    return new Promise((resolve, reject) => {
-      // 제목 텍스트 줄바꿈 처리 (최대 2줄, 영상 너비의 80% 사용)
-      // 영상 너비 1080px의 80% = 864px, fontsize=42, 한글 평균 너비 약 33px → 한 줄당 약 25자
-      const wrappedTitle = this.wrapText(title, 25, 2);
-      const escapedTitle = this.escapeFFmpegText(wrappedTitle);
+    return new Promise(async (resolve, reject) => {
+      // 제목 텍스트 단일 줄로 제한 (FFmpeg 명령어 길이 문제 방지)
+      // 영상 너비 1080px의 80% = 864px, fontsize=42, 한글 평균 너비 약 33px → 한 줄당 약 20자로 제한
+      const MAX_TITLE_LENGTH = 20;
+      const truncatedTitle = title.length > MAX_TITLE_LENGTH
+        ? title.substring(0, MAX_TITLE_LENGTH) + '...'
+        : title;
+      const escapedTitle = this.escapeFFmpegText(truncatedTitle);
 
-      // 제목 줄 수 계산 (줄바꿈 문자 개수 + 1)
-      const titleLineCount = (wrappedTitle.match(/\n/g) || []).length + 1;
-
-      // 하이라이트 바 높이 동적 계산
-      // 60px + (줄 수 * 60px)
-      const highlightBarHeight = 60 + (titleLineCount * 60);
+      // 하이라이트 바 높이 (단일 줄 고정)
+      const highlightBarHeight = 120;
 
       // 이미지 개수와 자막 타이밍에 따른 이미지 전환 구간 계산
       let imageTimings: Array<{ imagePath: string; startTime: number; endTime: number }> = [];
@@ -253,41 +252,21 @@ export class ShortsVideoService {
         // 이미지를 세로 화면에 맞게 스케일 (비율 유지, 검은 배경 패딩)
         `scale=1080:1920:force_original_aspect_ratio=decrease`,
         `pad=1080:1920:(ow-iw)/2:(oh-ih)/2:black`,
-
-        // 빨간색 하이라이트 바 (롱폼 스타일, 제목 길이에 따라 동적 높이)
-        `drawbox=x=60:y=270:w=8:h=${highlightBarHeight}:color=red@1.0:t=fill`,
-
-        // YBC News 로고 텍스트
-        `drawtext=fontfile=/System/Library/Fonts/AppleSDGothicNeo.ttc:text='YBC News':` +
-        `fontcolor=white:fontsize=32:` +
-        `x=80:y=280`,
-
-        // 제목 자막 (YBC News 아래, 흰색 텍스트)
-        `drawtext=fontfile=/System/Library/Fonts/AppleSDGothicNeo.ttc:text='${escapedTitle}':` +
-        `fontcolor=white:fontsize=42:` +
-        `x=80:y=330:line_spacing=10`,
       ];
 
-      // 시간 동기화 자막 추가 (영상 너비의 85% 사용, 강력한 너비 제한)
+      // 시간 동기화 자막 추가 (SRT 파일 사용)
+      let srtPath: string | null = null;
       if (subtitles && subtitles.length > 0) {
-        // 각 문장에 대해 시간 기반 자막 추가
-        for (const subtitle of subtitles) {
-          // 영상 너비 1080px의 85% = 918px 사용
-          // fontsize=36, 한글 평균 너비 약 30px → 한 줄당 약 22자로 안전하게 제한
-          const wrappedSubtitle = this.wrapText(subtitle.text, 22);
-          const escapedSubtitle = this.escapeFFmpegText(wrappedSubtitle);
+        // SRT 파일 생성
+        srtPath = path.join(this.outputDir, `subtitle_${Date.now()}.srt`);
+        await this.generateSrtFile(subtitles, srtPath);
 
-          // enable='between(t,start,end)'로 시간 구간에만 표시
-          // text_w < 920 조건으로 강제 너비 제한 (920px 초과 시 왼쪽 정렬)
-          videoFilters.push(
-            `drawtext=fontfile=/System/Library/Fonts/AppleSDGothicNeo.ttc:text='${escapedSubtitle}':` +
-            `fontcolor=white:fontsize=36:box=1:boxcolor=black@0.7:boxborderw=8:` +
-            `x=if(lt(text_w\\,920)\\,(w-text_w)/2\\,60):y=h-th-500:line_spacing=8:` +
-            `enable='between(t,${subtitle.startTime.toFixed(2)},${subtitle.endTime.toFixed(2)})'`
-          );
-        }
+        // SRT 자막 필터 추가 (하단 배치)
+        videoFilters.push(
+          `subtitles=${srtPath}:force_style='FontName=AppleSDGothicNeo,FontSize=8,PrimaryColour=&HFFFFFF,OutlineColour=&H000000,BackColour=&H80000000,BorderStyle=3,Outline=2,Shadow=0,Alignment=2,MarginV=30'`
+        );
       } else {
-        // 자막 타이밍이 없으면 전체 스크립트를 고정 표시 (영상 너비의 85% 사용)
+        // 자막 타이밍이 없으면 전체 스크립트를 고정 표시
         const wrappedScript = this.wrapText(script, 22);
         const escapedScript = this.escapeFFmpegText(wrappedScript);
 
@@ -344,11 +323,11 @@ export class ShortsVideoService {
         command
           .input(audioPath)
           .complexFilter(complexFilters, 'outv')
-          .outputOptions(['-map', '[outv]', '-map', `${uniqueImages.length}:a`])
-          .videoCodec('libx264')
-          .audioCodec('aac')
-          .audioBitrate('128k')
           .outputOptions([
+            '-map', `${uniqueImages.length}:a`,
+            '-vcodec', 'libx264',
+            '-acodec', 'aac',
+            '-b:a', '128k',
             '-pix_fmt', 'yuv420p',
             '-preset', 'fast',
             '-crf', '23',
@@ -382,12 +361,24 @@ export class ShortsVideoService {
           const percent = progress.percent ? progress.percent.toFixed(2) : '0.00';
           this.logger.debug(`Processing: ${percent}% done`);
         })
-        .on('end', () => {
+        .on('end', async () => {
           this.logger.log('Shorts video rendering completed');
+
+          // SRT 파일 정리
+          if (srtPath) {
+            await fs.unlink(srtPath).catch(() => {});
+          }
+
           resolve();
         })
-        .on('error', (err) => {
+        .on('error', async (err) => {
           this.logger.error('FFmpeg error:', err.message);
+
+          // 에러 발생 시에도 SRT 파일 정리
+          if (srtPath) {
+            await fs.unlink(srtPath).catch(() => {});
+          }
+
           reject(err);
         })
         .run();
@@ -395,18 +386,89 @@ export class ShortsVideoService {
   }
 
   /**
+   * SRT 자막 파일 생성
+   * @param subtitles 자막 타이밍 정보 배열
+   * @param outputPath 출력할 SRT 파일 경로
+   */
+  private async generateSrtFile(subtitles: SubtitleTiming[], outputPath: string): Promise<void> {
+    const srtContent = subtitles.map((subtitle, index) => {
+      // 시간을 SRT 형식으로 변환 (HH:MM:SS,mmm)
+      const startTime = this.formatSrtTime(subtitle.startTime);
+      const endTime = this.formatSrtTime(subtitle.endTime);
+
+      // 한자를 한글로 치환한 텍스트
+      const text = this.replaceHanjaToHangul(subtitle.text);
+
+      return `${index + 1}\n${startTime} --> ${endTime}\n${text}\n`;
+    }).join('\n');
+
+    await fs.writeFile(outputPath, srtContent, 'utf-8');
+    this.logger.debug(`SRT file created: ${outputPath}`);
+  }
+
+  /**
+   * 초 단위 시간을 SRT 시간 형식으로 변환
+   * @param seconds 초 단위 시간
+   * @returns HH:MM:SS,mmm 형식 문자열
+   */
+  private formatSrtTime(seconds: number): string {
+    const hours = Math.floor(seconds / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60);
+    const secs = Math.floor(seconds % 60);
+    const millis = Math.floor((seconds % 1) * 1000);
+
+    return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')},${String(millis).padStart(3, '0')}`;
+  }
+
+  /**
+   * 한자를 한글로 치환
+   * 뉴스 제목이나 내용에 자주 등장하는 한자를 한글로 변환
+   */
+  private replaceHanjaToHangul(text: string): string {
+    const hanjaMap: { [key: string]: string } = {
+      '與': '여',
+      '野': '야',
+      '前': '전',
+      '後': '후',
+      '中': '중',
+      '韓': '한',
+      '美': '미',
+      '日': '일',
+      '北': '북',
+      '南': '남',
+      '東': '동',
+      '西': '서',
+      '大': '대',
+      '小': '소',
+      '新': '신',
+      '舊': '구',
+      '元': '원',
+      '副': '부',
+    };
+
+    let result = text;
+    for (const [hanja, hangul] of Object.entries(hanjaMap)) {
+      result = result.replace(new RegExp(hanja, 'g'), hangul);
+    }
+    return result;
+  }
+
+  /**
    * FFmpeg 텍스트 이스케이프
    * 특수문자를 FFmpeg drawtext 필터에 맞게 변환
    */
   private escapeFFmpegText(text: string): string {
-    return text
+    // 먼저 한자를 한글로 치환
+    const hanjaReplaced = this.replaceHanjaToHangul(text);
+
+    return hanjaReplaced
       .replace(/\\/g, '\\\\\\\\') // 백슬래시
       .replace(/'/g, "'\\''") // 작은따옴표 (shell escape)
       .replace(/:/g, '\\:') // 콜론
       .replace(/\[/g, '\\[') // 대괄호
       .replace(/\]/g, '\\]')
       .replace(/"/g, '\\"') // 큰따옴표
-      .replace(/\n/g, ' '); // 줄바꿈을 공백으로 변환 (FFmpeg drawtext는 자동 줄바꿈 지원)
+      .replace(/\n/g, '\\n'); // 줄바꿈을 FFmpeg 줄바꿈 문자로 변환
   }
 
   /**
