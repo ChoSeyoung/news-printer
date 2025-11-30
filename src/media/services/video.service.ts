@@ -434,32 +434,35 @@ export class VideoService {
         return subtitle.startTime < segmentEndTime && subtitle.endTime > segmentStartTime;
       });
 
-      // TTS 동기화 자막 추가 (하단 중앙)
+      // TTS 동기화 자막 추가 (하단 중앙, 좌우 여백 고려)
+      // 영상 너비 1920px의 85% = 1632px 사용
+      // fontsize=36, 한글 평균 너비 약 30px → 한 줄당 약 45자로 안전하게 제한
       // 세그먼트 시작 시간을 기준으로 타이밍 조정
       for (const subtitle of segmentSubtitles) {
-        const wrappedSubtitle = this.wrapText(subtitle.text, 40, 2);
+        const wrappedSubtitle = this.wrapText(subtitle.text, 45, 2);
         const escapedSubtitle = this.escapeFFmpegText(wrappedSubtitle);
 
         // 세그먼트 내 상대 시간으로 변환
         const relativeStartTime = Math.max(0, subtitle.startTime - segmentStartTime);
         const relativeEndTime = Math.min(duration, subtitle.endTime - segmentStartTime);
 
+        // text_w < 1640 조건으로 강제 너비 제한 (1640px 초과 시 왼쪽 정렬)
         videoFilters.push(
           `drawtext=fontfile=/System/Library/Fonts/AppleSDGothicNeo.ttc:text='${escapedSubtitle}':` +
           `fontcolor=white:fontsize=36:box=1:boxcolor=black@0.7:boxborderw=8:` +
-          `x=(w-text_w)/2:y=h-th-120:line_spacing=8:` +
+          `x=if(lt(text_w\\,1640)\\,(w-text_w)/2\\,140):y=h-th-120:line_spacing=8:` +
           `enable='between(t,${relativeStartTime.toFixed(2)},${relativeEndTime.toFixed(2)})'`
         );
       }
     } else if (script) {
-      // 자막 타이밍이 없으면 스크립트만 고정 표시 (제목 제거)
-      const wrappedScript = this.wrapText(script, 40, 2);
+      // 자막 타이밍이 없으면 스크립트만 고정 표시 (제목 제거, 좌우 여백 고려)
+      const wrappedScript = this.wrapText(script, 45, 2);
       const escapedScript = this.escapeFFmpegText(wrappedScript);
 
       videoFilters.push(
         `drawtext=fontfile=/System/Library/Fonts/AppleSDGothicNeo.ttc:text='${escapedScript}':` +
         `fontcolor=white:fontsize=36:box=1:boxcolor=black@0.7:boxborderw=8:` +
-        `x=(w-text_w)/2:y=h-th-120:line_spacing=8`
+        `x=if(lt(text_w\\,1640)\\,(w-text_w)/2\\,140):y=h-th-120:line_spacing=8`
       );
     }
 
