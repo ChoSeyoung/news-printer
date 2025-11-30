@@ -69,6 +69,83 @@ export class TextPreprocessor {
       .replace(/親/g, '친')
       .replace(/非/g, '비')
       .replace(/發/g, '발')
-      .replace(/號/g, '호');
+      .replace(/號/g, '호')
+      // 일반 한자 치환 (자막용)
+      .replace(/前/g, '전')
+      .replace(/後/g, '후')
+      .replace(/中/g, '중')
+      .replace(/韓/g, '한')
+      .replace(/美/g, '미')
+      .replace(/日/g, '일')
+      .replace(/北/g, '북')
+      .replace(/南/g, '남')
+      .replace(/東/g, '동')
+      .replace(/西/g, '서')
+      .replace(/大/g, '대')
+      .replace(/小/g, '소')
+      .replace(/新/g, '신')
+      .replace(/舊/g, '구')
+      .replace(/元/g, '원')
+      .replace(/副/g, '부');
+  }
+
+  /**
+   * TTS가 자연스럽게 읽을 수 있도록 텍스트를 정제합니다
+   *
+   * @param text - 원본 텍스트
+   * @returns 정제된 텍스트
+   *
+   * 정제 항목:
+   * - 특수문자 제거 (괄호, 따옴표, 기타 기호)
+   * - 여러 개의 공백을 하나로 통합
+   * - 문장 끝 정리 (마침표, 느낌표, 물음표만 유지)
+   * - 불필요한 개행 제거
+   * - 숫자와 문자 사이 띄어쓰기 정리
+   */
+  static normalizeTextForTTS(text: string): string {
+    return text
+      // 따옴표 제거 (큰따옴표, 작은따옴표, 전각 따옴표)
+      .replace(/["'"""'']/g, '')
+      // 괄호와 내용 제거 (영어, 한자, 부가 설명 등)
+      .replace(/\([^)]*\)/g, '')
+      .replace(/\[[^\]]*\]/g, '')
+      .replace(/\{[^}]*\}/g, '')
+      // 특수기호 제거 (하이픈, 슬래시, 앰퍼샌드 등)
+      .replace(/[~`!@#$%^&*_+=|\\<>]/g, '')
+      .replace(/[-–—]/g, ' ') // 하이픈 계열은 공백으로
+      .replace(/[/]/g, ' ') // 슬래시도 공백으로
+      // 연속된 공백을 하나로 통합
+      .replace(/\s+/g, ' ')
+      // 문장 부호 앞뒤 공백 정리
+      .replace(/\s*([.,!?])\s*/g, '$1 ')
+      // 문장 끝 이후 공백 정리
+      .replace(/([.!?])\s+/g, '$1 ')
+      // 개행 문자를 공백으로 변환 (자연스러운 흐름)
+      .replace(/\n+/g, ' ')
+      // 숫자와 한글 사이 띄어쓰기 통일
+      .replace(/(\d)\s*([가-힣])/g, '$1 $2')
+      .replace(/([가-힣])\s*(\d)/g, '$1 $2')
+      // 앞뒤 공백 제거
+      .trim();
+  }
+
+  /**
+   * 텍스트를 TTS 및 뉴스 스크립트에 적합하게 완전히 전처리합니다
+   *
+   * @param text - 원본 텍스트
+   * @returns 전처리된 텍스트
+   *
+   * 처리 순서:
+   * 1. 한자를 한글로 변환
+   * 2. TTS용 텍스트 정제
+   */
+  static preprocessForNews(text: string): string {
+    // 1. 한자를 한글로 변환
+    const hanjaConverted = TextPreprocessor.preprocessText(text);
+
+    // 2. TTS용 정제
+    const ttsReady = TextPreprocessor.normalizeTextForTTS(hanjaConverted);
+
+    return ttsReady;
   }
 }

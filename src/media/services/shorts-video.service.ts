@@ -4,6 +4,7 @@ import { promises as fs } from 'fs';
 import * as path from 'path';
 import ffmpeg from 'fluent-ffmpeg';
 import { SubtitleTiming } from './tts.service';
+import { TextPreprocessor } from '../../common/utils/text-preprocessor.util';
 
 /**
  * YouTube Shorts 전용 비디오 렌더링 서비스
@@ -397,7 +398,7 @@ export class ShortsVideoService {
       const endTime = this.formatSrtTime(subtitle.endTime);
 
       // 한자를 한글로 치환한 텍스트
-      const text = this.replaceHanjaToHangul(subtitle.text);
+      const text = TextPreprocessor.preprocessText(subtitle.text);
 
       return `${index + 1}\n${startTime} --> ${endTime}\n${text}\n`;
     }).join('\n');
@@ -421,45 +422,12 @@ export class ShortsVideoService {
   }
 
   /**
-   * 한자를 한글로 치환
-   * 뉴스 제목이나 내용에 자주 등장하는 한자를 한글로 변환
-   */
-  private replaceHanjaToHangul(text: string): string {
-    const hanjaMap: { [key: string]: string } = {
-      '與': '여',
-      '野': '야',
-      '前': '전',
-      '後': '후',
-      '中': '중',
-      '韓': '한',
-      '美': '미',
-      '日': '일',
-      '北': '북',
-      '南': '남',
-      '東': '동',
-      '西': '서',
-      '大': '대',
-      '小': '소',
-      '新': '신',
-      '舊': '구',
-      '元': '원',
-      '副': '부',
-    };
-
-    let result = text;
-    for (const [hanja, hangul] of Object.entries(hanjaMap)) {
-      result = result.replace(new RegExp(hanja, 'g'), hangul);
-    }
-    return result;
-  }
-
-  /**
    * FFmpeg 텍스트 이스케이프
    * 특수문자를 FFmpeg drawtext 필터에 맞게 변환
    */
   private escapeFFmpegText(text: string): string {
     // 먼저 한자를 한글로 치환
-    const hanjaReplaced = this.replaceHanjaToHangul(text);
+    const hanjaReplaced = TextPreprocessor.preprocessText(text);
 
     return hanjaReplaced
       .replace(/\\/g, '\\\\\\\\') // 백슬래시

@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { GoogleGenerativeAI } from '@google/generative-ai';
+import { TextPreprocessor } from '../../common/utils/text-preprocessor.util';
 
 /**
  * 스크립트 응답 인터페이스
@@ -224,8 +225,8 @@ ${truncatedContent}`;
 
       // 이스케이프 문자 제거 및 TTS용 정제 후 반환
       return {
-        anchor: this.normalizeTextForTTS(this.removeEscapeCharacters(anchorText)),
-        reporter: this.normalizeTextForTTS(this.removeEscapeCharacters(reporterText)),
+        anchor: TextPreprocessor.normalizeTextForTTS(this.removeEscapeCharacters(anchorText)),
+        reporter: TextPreprocessor.normalizeTextForTTS(this.removeEscapeCharacters(reporterText)),
       };
     } catch (error) {
       this.logger.error('Failed to parse script response:', error.message);
@@ -443,7 +444,7 @@ ${truncatedContent}`;
       }
 
       // 이스케이프 문자 제거 및 TTS용 정제 후 반환
-      return this.normalizeTextForTTS(this.removeEscapeCharacters(parsed.script));
+      return TextPreprocessor.normalizeTextForTTS(this.removeEscapeCharacters(parsed.script));
     } catch (error) {
       this.logger.error('Failed to parse Shorts script response:', error.message);
       this.logger.debug('Raw response text:', text);
@@ -473,45 +474,5 @@ ${truncatedContent}`;
       .replace(/\\"/g, '"')
       .replace(/\\'/g, "'")
       .replace(/\\\\/g, '\\');
-  }
-
-  /**
-   * TTS가 자연스럽게 읽을 수 있도록 텍스트를 정제합니다
-   *
-   * @param text - 원본 텍스트
-   * @returns 정제된 텍스트
-   *
-   * 정제 항목:
-   * - 특수문자 제거 (괄호, 따옴표, 기타 기호)
-   * - 여러 개의 공백을 하나로 통합
-   * - 문장 끝 정리 (마침표, 느낌표, 물음표만 유지)
-   * - 불필요한 개행 제거
-   * - 숫자와 문자 사이 띄어쓰기 정리
-   */
-  private normalizeTextForTTS(text: string): string {
-    return text
-      // 따옴표 제거 (큰따옴표, 작은따옴표, 전각 따옴표)
-      .replace(/["'"""'']/g, '')
-      // 괄호와 내용 제거 (영어, 한자, 부가 설명 등)
-      .replace(/\([^)]*\)/g, '')
-      .replace(/\[[^\]]*\]/g, '')
-      .replace(/\{[^}]*\}/g, '')
-      // 특수기호 제거 (하이픈, 슬래시, 앰퍼샌드 등)
-      .replace(/[~`!@#$%^&*_+=|\\<>]/g, '')
-      .replace(/[-–—]/g, ' ') // 하이픈 계열은 공백으로
-      .replace(/[/]/g, ' ') // 슬래시도 공백으로
-      // 연속된 공백을 하나로 통합
-      .replace(/\s+/g, ' ')
-      // 문장 부호 앞뒤 공백 정리
-      .replace(/\s*([.,!?])\s*/g, '$1 ')
-      // 문장 끝 이후 공백 정리
-      .replace(/([.!?])\s+/g, '$1 ')
-      // 개행 문자를 공백으로 변환 (자연스러운 흐름)
-      .replace(/\n+/g, ' ')
-      // 숫자와 한글 사이 띄어쓰기 통일
-      .replace(/(\d)\s*([가-힣])/g, '$1 $2')
-      .replace(/([가-힣])\s*(\d)/g, '$1 $2')
-      // 앞뒤 공백 제거
-      .trim();
   }
 }
