@@ -268,31 +268,33 @@ export class ShortsVideoService {
         `x=80:y=330:line_spacing=10`,
       ];
 
-      // 시간 동기화 자막 추가 (영상 너비의 80% 사용)
+      // 시간 동기화 자막 추가 (영상 너비의 85% 사용, 강력한 너비 제한)
       if (subtitles && subtitles.length > 0) {
         // 각 문장에 대해 시간 기반 자막 추가
         for (const subtitle of subtitles) {
-          // 영상 너비의 80% 사용: fontsize=36, 한글 평균 너비 약 28px → 한 줄당 약 27자
-          const wrappedSubtitle = this.wrapText(subtitle.text, 27);
+          // 영상 너비 1080px의 85% = 918px 사용
+          // fontsize=36, 한글 평균 너비 약 30px → 한 줄당 약 22자로 안전하게 제한
+          const wrappedSubtitle = this.wrapText(subtitle.text, 22);
           const escapedSubtitle = this.escapeFFmpegText(wrappedSubtitle);
 
           // enable='between(t,start,end)'로 시간 구간에만 표시
+          // text_w < 920 조건으로 강제 너비 제한 (920px 초과 시 왼쪽 정렬)
           videoFilters.push(
             `drawtext=fontfile=/System/Library/Fonts/AppleSDGothicNeo.ttc:text='${escapedSubtitle}':` +
-            `fontcolor=white:fontsize=36:box=1:boxcolor=black@0.7:boxborderw=6:` +
-            `x=(w-text_w)/2:y=h-th-500:line_spacing=8:` +
+            `fontcolor=white:fontsize=36:box=1:boxcolor=black@0.7:boxborderw=8:` +
+            `x=if(lt(text_w\\,920)\\,(w-text_w)/2\\,60):y=h-th-500:line_spacing=8:` +
             `enable='between(t,${subtitle.startTime.toFixed(2)},${subtitle.endTime.toFixed(2)})'`
           );
         }
       } else {
-        // 자막 타이밍이 없으면 전체 스크립트를 고정 표시 (영상 너비의 80% 사용)
-        const wrappedScript = this.wrapText(script, 27);
+        // 자막 타이밍이 없으면 전체 스크립트를 고정 표시 (영상 너비의 85% 사용)
+        const wrappedScript = this.wrapText(script, 22);
         const escapedScript = this.escapeFFmpegText(wrappedScript);
 
         videoFilters.push(
           `drawtext=fontfile=/System/Library/Fonts/AppleSDGothicNeo.ttc:text='${escapedScript}':` +
-          `fontcolor=white:fontsize=36:box=1:boxcolor=black@0.7:boxborderw=6:` +
-          `x=(w-text_w)/2:y=h-th-500:line_spacing=8`
+          `fontcolor=white:fontsize=36:box=1:boxcolor=black@0.7:boxborderw=8:` +
+          `x=if(lt(text_w\\,920)\\,(w-text_w)/2\\,60):y=h-th-500:line_spacing=8`
         );
       }
 
