@@ -403,8 +403,8 @@ export class ShortsVideoService {
       .replace(/:/g, '\\:') // 콜론
       .replace(/\[/g, '\\[') // 대괄호
       .replace(/\]/g, '\\]')
-      .replace(/"/g, '\\"'); // 큰따옴표
-    // 줄바꿈은 유지하여 FFmpeg drawtext에서 멀티라인 지원
+      .replace(/"/g, '\\"') // 큰따옴표
+      .replace(/\n/g, ' '); // 줄바꿈을 공백으로 변환 (FFmpeg drawtext는 자동 줄바꿈 지원)
   }
 
   /**
