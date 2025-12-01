@@ -276,7 +276,7 @@ export class ShortsVideoService {
           `drawbox=x=0:y=h-640:w=w:h=140:color=black@0.7:t=fill`,
           `drawtext=fontfile=/System/Library/Fonts/AppleSDGothicNeo.ttc:text='${escapedScript}':` +
           `fontcolor=white:fontsize=36:` +
-          `x=if(lt(text_w\\,920)\\,(w-text_w)/2\\,60):y=h-th-500:line_spacing=8`
+          `x=if(lt(text_w\\,920)\\,(w-text_w)/2\\,60):y=h-th-500:line_spacing=15`
         );
       }
 
