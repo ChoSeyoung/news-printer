@@ -3,7 +3,11 @@ import { MediaPipelineService } from './services/media-pipeline.service';
 import { AnalyticsService } from './services/analytics.service';
 import { YoutubeService } from './services/youtube.service';
 import { PendingUploadRetryService } from './services/pending-upload-retry.service';
+import { ShortsPipelineService } from './services/shorts-pipeline.service';
+import { DaumNewsScraperService } from '../news/services/daum-news-scraper.service';
 import { PublishNewsDto, PublishNewsResponseDto } from './dto/publish-news.dto';
+import * as fs from 'fs-extra';
+import * as path from 'path';
 
 @Controller('media')
 export class MediaController {
@@ -14,6 +18,8 @@ export class MediaController {
     private readonly analyticsService: AnalyticsService,
     private readonly youtubeService: YoutubeService,
     private readonly pendingUploadRetryService: PendingUploadRetryService,
+    private readonly shortsPipeline: ShortsPipelineService,
+    private readonly daumScraper: DaumNewsScraperService,
   ) {}
 
   @Post('publish')
@@ -320,6 +326,98 @@ export class MediaController {
       this.logger.error(`Failed to start ${videoType} retry:`, error.message);
       throw new HttpException(
         `Failed to start ${videoType} retry: ${error.message}`,
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
+  /**
+   * 검토용 영상 생성 (롱폼 + 숏폼)
+   *
+   * 최신 뉴스 1개를 가져와서 롱폼과 숏폼 영상을 생성하여 output/review 디렉토리에 저장합니다.
+   * API 실행 전 검토 디렉토리를 모두 정리합니다.
+   *
+   * @returns 생성된 영상 경로
+   */
+  @Post('review/generate')
+  async generateReviewVideos() {
+    try {
+      this.logger.log('Starting review video generation');
+      const reviewDir = path.join(process.cwd(), 'output', 'review');
+
+      // 1. 검토 디렉토리 정리
+      this.logger.log('Cleaning review directory...');
+      await fs.emptyDir(reviewDir);
+
+      // 2. 최신 뉴스 1개 가져오기
+      this.logger.log('Fetching latest news article...');
+      const articles = await this.daumScraper.fetchAllNews(1);
+
+      if (articles.length === 0) {
+        throw new HttpException('No news articles found', HttpStatus.NOT_FOUND);
+      }
+
+      const article = articles[0];
+      this.logger.log(`Selected article: ${article.title}`);
+
+      // 3. 스크립트 생성 (간단히 기사 내용 사용)
+      const fullContent = `${article.title}\n\n${article.content}`;
+
+      // 4. 롱폼 영상 생성 (업로드 없이 파일만 생성)
+      this.logger.log('Generating longform video...');
+      const longformResult = await this.mediaPipeline.publishNews({
+        title: article.title,
+        newsContent: article.content,
+        anchorScript: fullContent.substring(0, 500), // 간단한 스크립트
+        reporterScript: fullContent.substring(0, 500),
+        newsUrl: article.url,
+        imageUrls: article.imageUrls,
+        privacyStatus: 'private',
+        skipUpload: true, // 업로드 건너뛰기
+      });
+
+      // 5. 숏폼 영상 생성 (업로드 없이 파일만 생성)
+      this.logger.log('Generating shortform video...');
+      const shortsResult = await this.shortsPipeline.createAndUploadShorts({
+        title: article.title,
+        reporterScript: fullContent.substring(0, 300),
+        content: article.content,
+        newsUrl: article.url,
+        imageUrls: article.imageUrls,
+        skipUpload: true, // 업로드 건너뛰기
+      });
+
+      // 6. 생성된 영상 파일을 review 디렉토리로 복사
+      const longformPath = path.join(reviewDir, 'longform_review.mp4');
+      const shortformPath = path.join(reviewDir, 'shortform_review.mp4');
+
+      if (longformResult.videoPath) {
+        await fs.copy(longformResult.videoPath, longformPath);
+        this.logger.log(`Longform saved to: ${longformPath}`);
+      }
+
+      if (shortsResult.videoPath) {
+        await fs.copy(shortsResult.videoPath, shortformPath);
+        this.logger.log(`Shortform saved to: ${shortformPath}`);
+      }
+
+      return {
+        success: true,
+        message: 'Review videos generated successfully',
+        article: {
+          title: article.title,
+          url: article.url,
+        },
+        videos: {
+          longform: longformPath,
+          shortform: shortformPath,
+        },
+        note: 'Videos saved to output/review directory. No upload performed.',
+      };
+    } catch (error) {
+      this.logger.error('Failed to generate review videos:', error.message);
+      throw new HttpException(
+        `Failed to generate review videos: ${error.message}`,
         HttpStatus.INTERNAL_SERVER_ERROR,
       );
     }

@@ -37,6 +37,9 @@ export interface CreateShortsOptions {
 
   /** 공개 설정 (기본: public) */
   privacyStatus?: 'public' | 'private' | 'unlisted';
+
+  /** 업로드 건너뛰기 (검토용) */
+  skipUpload?: boolean;
 }
 
 /**
@@ -51,6 +54,12 @@ export interface CreateShortsResult {
 
   /** 생성된 비디오 ID */
   videoId?: string;
+
+  /** 생성된 영상 파일 경로 */
+  videoPath?: string;
+
+  /** 결과 메시지 */
+  message?: string;
 
   /** 에러 메시지 */
   error?: string;
@@ -270,6 +279,16 @@ export class ShortsPipelineService {
         options.newsUrl,
       );
 
+      // Skip upload if requested (for review purposes)
+      if (options.skipUpload) {
+        this.logger.log('Skipping upload (review mode)');
+        return {
+          success: true,
+          videoPath,
+          message: 'Shorts generated successfully (upload skipped)',
+        };
+      }
+
       // 5️⃣ YouTube Shorts 업로드
       this.logger.log('Step 5: Uploading to YouTube Shorts');
 
@@ -431,7 +450,9 @@ export class ShortsPipelineService {
       };
     } finally {
       // 6️⃣ 임시 파일 정리
-      await this.cleanupTempFiles(audioPath, videoPath, ...downloadedImagePaths);
+      // Skip video cleanup if in review mode (skipUpload)
+      const videoToCleanup = options.skipUpload ? undefined : videoPath;
+      await this.cleanupTempFiles(audioPath, videoToCleanup, ...downloadedImagePaths);
     }
   }
 

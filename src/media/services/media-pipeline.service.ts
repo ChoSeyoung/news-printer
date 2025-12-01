@@ -21,6 +21,7 @@ export interface PublishNewsOptions {
   privacyStatus?: 'public' | 'private' | 'unlisted';
   newsUrl?: string;
   imageUrls?: string[]; // RSS feed image URLs
+  skipUpload?: boolean; // 업로드 건너뛰기 (검토용)
 }
 
 export interface PublishNewsResult {
@@ -28,6 +29,7 @@ export interface PublishNewsResult {
   videoId?: string;
   videoUrl?: string;
   videoPath?: string;
+  message?: string;
   error?: string;
 }
 
@@ -88,7 +90,8 @@ export class MediaPipelineService {
       this.logger.log(`Starting media pipeline for: ${options.title}`);
 
       // Step 0: Check if already published (duplicate prevention)
-      if (options.newsUrl) {
+      // Skip duplicate check if in review mode (skipUpload)
+      if (options.newsUrl && !options.skipUpload) {
         if (this.publishedNewsTrackingService.isAlreadyPublished(options.newsUrl)) {
           const existingRecord = this.publishedNewsTrackingService.getPublishedRecord(options.newsUrl);
           this.logger.warn(`News already published: ${options.title}`);
@@ -219,6 +222,16 @@ export class MediaPipelineService {
       });
 
       this.logger.debug(`Thumbnail created: ${thumbnailPath}`);
+
+      // Skip upload if requested (for review purposes)
+      if (options.skipUpload) {
+        this.logger.log('Skipping upload (review mode)');
+        return {
+          success: true,
+          videoPath,
+          message: 'Video generated successfully (upload skipped)',
+        };
+      }
 
       // Step 6: Upload to YouTube with SEO metadata and thumbnail
       this.logger.log('Step 6/6: Uploading to YouTube');

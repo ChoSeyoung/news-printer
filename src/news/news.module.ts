@@ -16,6 +16,6 @@ import { MediaModule } from '../media/media.module';
     HourlyBrowserUploadScheduleService, // 통합 스케줄러 (활성)
     KeywordAnalysisService,
   ],
-  exports: [GeminiService, KeywordAnalysisService],
+  exports: [GeminiService, KeywordAnalysisService, DaumNewsScraperService],
 })
 export class NewsModule {}
