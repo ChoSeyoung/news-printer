@@ -617,7 +617,10 @@ export class VideoService {
       const endTime = this.formatSrtTime(subtitle.endTime);
 
       // 한자 변환 및 특수문자 제거
-      const text = TextPreprocessor.preprocessForNews(subtitle.text);
+      let text = TextPreprocessor.preprocessForNews(subtitle.text);
+
+      // 35글자 초과 문장 분리
+      text = TextPreprocessor.splitLongSentences(text, 35);
 
       return `${index + 1}\n${startTime} --> ${endTime}\n${text}\n`;
     }).join('\n');

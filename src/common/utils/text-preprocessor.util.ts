@@ -154,4 +154,95 @@ export class TextPreprocessor {
 
     return ttsReady;
   }
+
+  /**
+   * 35글자 초과 문장을 분리합니다 (자막 가독성)
+   *
+   * @param text - 원본 텍스트
+   * @param maxLength - 최대 문장 길이 (기본값: 35)
+   * @returns 분리된 텍스트
+   *
+   * 분리 규칙:
+   * - 문장 부호(. ! ?)로 먼저 분리
+   * - 35글자 초과 시 쉼표(,)로 분리
+   * - 그래도 초과 시 접속사나 공백으로 분리
+   */
+  static splitLongSentences(text: string, maxLength: number = 35): string {
+    // 문장 부호로 문장 분리
+    const sentences = text.split(/([.!?])\s*/);
+    const result: string[] = [];
+
+    for (let i = 0; i < sentences.length; i++) {
+      let sentence = sentences[i];
+
+      // 문장 부호만 있는 경우 이전 문장에 붙이기
+      if (sentence.match(/^[.!?]$/)) {
+        if (result.length > 0) {
+          result[result.length - 1] += sentence;
+        }
+        continue;
+      }
+
+      // 빈 문자열 건너뛰기
+      if (!sentence.trim()) continue;
+
+      // 35글자 이하면 그대로 추가
+      if (sentence.length <= maxLength) {
+        result.push(sentence.trim());
+        continue;
+      }
+
+      // 35글자 초과 시 쉼표로 분리
+      const parts = sentence.split(/,\s*/);
+      let currentPart = '';
+
+      for (const part of parts) {
+        // 현재 부분에 추가했을 때 35글자 초과하는지 확인
+        const testPart = currentPart ? currentPart + ', ' + part : part;
+
+        if (testPart.length <= maxLength) {
+          currentPart = testPart;
+        } else {
+          // 현재 부분이 있으면 결과에 추가
+          if (currentPart) {
+            result.push(currentPart.trim());
+          }
+
+          // 새 부분이 35글자 초과하면 공백으로 분리
+          if (part.length > maxLength) {
+            const words = part.split(/\s+/);
+            let line = '';
+
+            for (const word of words) {
+              const testLine = line ? line + ' ' + word : word;
+
+              if (testLine.length <= maxLength) {
+                line = testLine;
+              } else {
+                if (line) {
+                  result.push(line.trim());
+                }
+                line = word;
+              }
+            }
+
+            if (line) {
+              currentPart = line;
+            } else {
+              currentPart = '';
+            }
+          } else {
+            currentPart = part;
+          }
+        }
+      }
+
+      // 남은 부분 추가
+      if (currentPart) {
+        result.push(currentPart.trim());
+      }
+    }
+
+    return result.join('. ').replace(/\.\s*\./g, '.').trim();
+  }
 }
