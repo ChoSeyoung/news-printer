@@ -271,9 +271,11 @@ export class ShortsVideoService {
         const wrappedScript = this.wrapText(script, 22);
         const escapedScript = this.escapeFFmpegText(wrappedScript);
 
+        // 고정 높이 배경 박스 (fontsize 36 기준 약 140px 높이)
         videoFilters.push(
+          `drawbox=x=0:y=h-640:w=w:h=140:color=black@0.7:t=fill`,
           `drawtext=fontfile=/System/Library/Fonts/AppleSDGothicNeo.ttc:text='${escapedScript}':` +
-          `fontcolor=white:fontsize=36:box=1:boxcolor=black@0.7:boxborderw=8:` +
+          `fontcolor=white:fontsize=36:` +
           `x=if(lt(text_w\\,920)\\,(w-text_w)/2\\,60):y=h-th-500:line_spacing=8`
         );
       }
