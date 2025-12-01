@@ -156,19 +156,20 @@ export class TextPreprocessor {
   }
 
   /**
-   * 35글자 초과 문장을 분리합니다 (자막 가독성)
+   * 긴 문장을 자막 가독성을 위해 적절히 분리합니다
    *
    * @param text - 원본 텍스트
-   * @param maxLength - 최대 문장 길이 (기본값: 35)
+   * @param maxLength - 권장 최대 길이 (기본값: 40, 유연하게 적용)
    * @returns 분리된 텍스트
    *
    * 분리 규칙:
-   * - 문장 부호(. ! ?)로 먼저 분리
-   * - 35글자 초과 시 쉼표(,)로 분리
-   * - 그래도 초과 시 접속사나 공백으로 분리
+   * - 원본 문장 부호(. ! ? ,)를 최대한 유지
+   * - 40자를 가이드라인으로 사용하되, 문법적 자연스러움 우선
+   * - 쉼표(,)가 있으면 그 지점에서 분리 고려
+   * - 50자 이상 초과 시에만 강제 분리
    */
-  static splitLongSentences(text: string, maxLength: number = 35): string {
-    // 문장 부호로 문장 분리
+  static splitLongSentences(text: string, maxLength: number = 40): string {
+    // 문장 부호로 문장 분리 (원본 부호 유지)
     const sentences = text.split(/([.!?])\s*/);
     const result: string[] = [];
 
@@ -186,54 +187,33 @@ export class TextPreprocessor {
       // 빈 문자열 건너뛰기
       if (!sentence.trim()) continue;
 
-      // 35글자 이하면 그대로 추가
-      if (sentence.length <= maxLength) {
+      // 50자 이하면 그대로 유지 (유연한 적용)
+      if (sentence.length <= maxLength + 10) {
         result.push(sentence.trim());
         continue;
       }
 
-      // 35글자 초과 시 쉼표로 분리
+      // 50자 초과 시에만 쉼표로 분리 시도
       const parts = sentence.split(/,\s*/);
       let currentPart = '';
 
-      for (const part of parts) {
-        // 현재 부분에 추가했을 때 35글자 초과하는지 확인
-        const testPart = currentPart ? currentPart + ', ' + part : part;
+      for (let j = 0; j < parts.length; j++) {
+        const part = parts[j];
+        const isLastPart = j === parts.length - 1;
 
-        if (testPart.length <= maxLength) {
+        // 쉼표 복원 (마지막 부분 제외)
+        const partWithComma = isLastPart ? part : part + ',';
+        const testPart = currentPart ? currentPart + ' ' + partWithComma : partWithComma;
+
+        // 40자 이내거나 마지막 부분이면 계속 결합
+        if (testPart.length <= maxLength || isLastPart) {
           currentPart = testPart;
         } else {
-          // 현재 부분이 있으면 결과에 추가
+          // 현재까지 모은 부분 저장
           if (currentPart) {
             result.push(currentPart.trim());
           }
-
-          // 새 부분이 35글자 초과하면 공백으로 분리
-          if (part.length > maxLength) {
-            const words = part.split(/\s+/);
-            let line = '';
-
-            for (const word of words) {
-              const testLine = line ? line + ' ' + word : word;
-
-              if (testLine.length <= maxLength) {
-                line = testLine;
-              } else {
-                if (line) {
-                  result.push(line.trim());
-                }
-                line = word;
-              }
-            }
-
-            if (line) {
-              currentPart = line;
-            } else {
-              currentPart = '';
-            }
-          } else {
-            currentPart = part;
-          }
+          currentPart = partWithComma;
         }
       }
 
@@ -243,6 +223,7 @@ export class TextPreprocessor {
       }
     }
 
-    return result.join('. ').replace(/\.\s*\./g, '.').trim();
+    // 원본 문장 부호를 유지하므로 단순히 공백으로 연결
+    return result.join(' ').replace(/\s+/g, ' ').trim();
   }
 }
