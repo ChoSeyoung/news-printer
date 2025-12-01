@@ -5,6 +5,7 @@ import { YoutubeService } from './services/youtube.service';
 import { PendingUploadRetryService } from './services/pending-upload-retry.service';
 import { ShortsPipelineService } from './services/shorts-pipeline.service';
 import { DaumNewsScraperService } from '../news/services/daum-news-scraper.service';
+import { GeminiService } from '../news/services/gemini.service';
 import { PublishNewsDto, PublishNewsResponseDto } from './dto/publish-news.dto';
 import * as fs from 'fs-extra';
 import * as path from 'path';
@@ -20,6 +21,7 @@ export class MediaController {
     private readonly pendingUploadRetryService: PendingUploadRetryService,
     private readonly shortsPipeline: ShortsPipelineService,
     private readonly daumScraper: DaumNewsScraperService,
+    private readonly geminiService: GeminiService,
   ) {}
 
   @Post('publish')
@@ -360,28 +362,28 @@ export class MediaController {
       const article = articles[0];
       this.logger.log(`Selected article: ${article.title}`);
 
-      // 3. 스크립트 생성 (간단히 기사 내용 사용)
-      const fullContent = `${article.title}\n\n${article.content}`;
+      // 3. Gemini로 롱폼 스크립트 생성
+      this.logger.log('Generating longform script with Gemini...');
+      const longformScript = await this.geminiService.generateScripts(article.content);
 
       // 4. 롱폼 영상 생성 (업로드 없이 파일만 생성)
       this.logger.log('Generating longform video...');
       const longformResult = await this.mediaPipeline.publishNews({
         title: article.title,
         newsContent: article.content,
-        anchorScript: fullContent.substring(0, 500), // 간단한 스크립트
-        reporterScript: fullContent.substring(0, 500),
+        anchorScript: longformScript.anchor,
+        reporterScript: longformScript.reporter,
         newsUrl: article.url,
         imageUrls: article.imageUrls,
         privacyStatus: 'private',
         skipUpload: true, // 업로드 건너뛰기
       });
 
-      // 5. 숏폼 영상 생성 (업로드 없이 파일만 생성)
+      // 5. 숏폼 영상 생성 (Gemini가 자동으로 스크립트 생성)
       this.logger.log('Generating shortform video...');
       const shortsResult = await this.shortsPipeline.createAndUploadShorts({
         title: article.title,
-        reporterScript: fullContent.substring(0, 300),
-        content: article.content,
+        content: article.content, // Gemini가 자동으로 Shorts 스크립트 생성
         newsUrl: article.url,
         imageUrls: article.imageUrls,
         skipUpload: true, // 업로드 건너뛰기

@@ -24,7 +24,7 @@ export interface CreateShortsOptions {
   title: string;
 
   /** Reporter 대본 (후방 호환성 유지용, content 없으면 사용) */
-  reporterScript: string;
+  reporterScript?: string;
 
   /** 뉴스 원문 전체 (Shorts 전용 스크립트 생성용) */
   content?: string;
@@ -124,7 +124,7 @@ export class ShortsPipelineService {
 
       // 1️⃣ Shorts 전용 스크립트 생성 (59초 이하 목표)
       this.logger.log('Step 1: Generating Shorts-optimized script');
-      let shortsScript: string;
+      let shortsScript: string | undefined;
 
       if (options.content) {
         // 뉴스 원문이 있으면 Gemini로 Shorts 전용 스크립트 생성 (150-200자)
@@ -134,20 +134,20 @@ export class ShortsPipelineService {
           options.content,
         );
 
-        if (!shortsScript) {
+        if (!shortsScript && options.reporterScript) {
           this.logger.warn('   Gemini script generation failed, falling back to reporter script');
           shortsScript = options.reporterScript;
-        } else {
+        } else if (shortsScript) {
           this.logger.debug(`   Generated shorts script: ${shortsScript}`);
         }
-      } else {
+      } else if (options.reporterScript) {
         // 후방 호환성: content 없으면 reporter script 사용
         this.logger.log('   Using reporter script as fallback (no content provided)');
         shortsScript = options.reporterScript;
       }
 
       if (!shortsScript) {
-        throw new Error('Failed to generate Shorts script');
+        throw new Error('Failed to generate Shorts script: content or reporterScript required');
       }
 
       // 2️⃣ Google TTS로 음성 생성 (타임포인트 포함)
