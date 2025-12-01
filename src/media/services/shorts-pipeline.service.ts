@@ -124,7 +124,7 @@ export class ShortsPipelineService {
 
       // 1️⃣ Shorts 전용 스크립트 생성 (59초 이하 목표)
       this.logger.log('Step 1: Generating Shorts-optimized script');
-      let shortsScript: string | undefined;
+      let shortsScript: string | undefined = undefined;
 
       if (options.content) {
         // 뉴스 원문이 있으면 Gemini로 Shorts 전용 스크립트 생성 (150-200자)
