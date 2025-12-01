@@ -130,11 +130,14 @@ export class TelegramNotificationService {
   }
 
   /**
-   * Markdown 특수 문자 이스케이프
+   * Markdown 특수 문자 이스케이프 (Legacy Markdown 방식)
+   *
+   * Telegram Bot API의 parse_mode: 'Markdown'에서는
+   * _ (underscore)와 * (asterisk)만 이스케이프하면 됩니다.
    */
   private escapeMarkdown(text: string): string {
-    // Markdown 특수 문자 이스케이프
-    return text.replace(/([_*\[\]()~`>#+\-=|{}.!])/g, '\\$1');
+    // Legacy Markdown에서는 _ 와 * 만 이스케이프
+    return text.replace(/([_*])/g, '\\$1');
   }
 
   /**
