@@ -616,8 +616,8 @@ export class VideoService {
       const startTime = this.formatSrtTime(subtitle.startTime);
       const endTime = this.formatSrtTime(subtitle.endTime);
 
-      // 한자를 한글로 치환한 텍스트
-      const text = TextPreprocessor.preprocessText(subtitle.text);
+      // 한자 변환 및 특수문자 제거
+      const text = TextPreprocessor.preprocessForNews(subtitle.text);
 
       return `${index + 1}\n${startTime} --> ${endTime}\n${text}\n`;
     }).join('\n');
