@@ -10,8 +10,8 @@
 - **대통령실 뉴스** - 청와대 및 대통령실 관련 기사
 - **국회 뉴스** - 국회 및 입법 활동 관련 기사
 - **자동 이미지 크롭** - 언론사별 워터마크 자동 제거 (연합뉴스 100px, 뉴스1 150px 등)
-- **중복 제거**: URL 기반 중복 기사 자동 필터링
-- **1시간 자동 실행**: 매 시간 정각에 자동으로 새 뉴스 수집 및 업로드
+- **중복 제거**: URL + 영상 타입(롱폼/숏폼) 기반 중복 기사 자동 필터링
+- **2시간 자동 실행**: 2시간마다 정각에 자동으로 새 뉴스 수집 및 업로드
 
 ### 🤖 AI 기반 콘텐츠 생성
 - **Google Gemini AI**: 뉴스 기사를 분석하여 자연스러운 앵커/리포터 스크립트 자동 생성
@@ -30,7 +30,8 @@
 - **SEO 최적화**: AI 기반 제목, 설명, 태그 자동 생성으로 검색 노출 최적화
 - **자동 업로드**: YouTube Data API v3를 통한 완전 자동 업로드
 - **브라우저 자동화 대안**: API 할당량 초과 시 Playwright 기반 자동 업로드
-- **중복 방지**: SQLite 기반 이미 업로드된 뉴스 추적 시스템
+- **중복 방지**: SQLite 기반 영상 타입별(롱폼/숏폼) 업로드 기록 추적
+- **스마트 중복 체크**: 동일 뉴스라도 롱폼/숏폼 각각 별도로 업로드 가능
 - **카테고리 자동 분류**: 뉴스 주제에 맞는 유튜브 카테고리 자동 선택 (정치: 25)
 
 ### 📱 텔레그램 알림
@@ -39,8 +40,9 @@
 - **실시간 모니터링**: 업로드 현황을 텔레그램으로 실시간 확인
 
 ### ⏰ 자동화 워크플로우
-- **매시간 자동 실행**: `@Cron(CronExpression.EVERY_HOUR)` - 매 시간 정각 자동 실행
+- **2시간마다 자동 실행**: `@Cron('0 */2 * * *')` - 2시간마다 정각 자동 실행
 - **에러 처리**: 실패 시 로그 기록 및 자동 정리
+- **중복 실행 방지**: 이미 처리 중인 경우 새 작업 건너뛰기
 - **수동 실행 API**: 테스트 및 디버깅용 수동 트리거 엔드포인트 제공
 
 📖 **자세한 문서**: [docs/](./docs/) 폴더 참고
@@ -60,15 +62,17 @@
 - **Sharp**: 이미지 처리 및 썸네일 생성
 - **Fluent-FFmpeg**: Node.js FFmpeg 래퍼
 
-### 외부 API
+### 외부 API & 자동화
 - **YouTube Data API v3**: 영상 업로드 및 메타데이터 관리
+- **Playwright**: 브라우저 자동화를 통한 대체 업로드 방식
+- **Telegram Bot API**: 업로드 성공 알림 및 모니터링
 
 ### 데이터 파싱
 - **Cheerio**: HTML 파싱 및 웹 스크래핑
 - **Axios**: HTTP 클라이언트
 
 ### 데이터베이스
-- **SQLite**: 중복 방지를 위한 업로드 기록 저장
+- **SQLite**: 영상 타입별(롱폼/숏폼) 업로드 기록 저장 및 중복 방지
 
 ## 📦 설치
 
@@ -179,9 +183,9 @@ news-printer/
 ├── src/
 │   ├── news/                      # 뉴스 모듈
 │   │   ├── services/
-│   │   │   ├── daum-news-scraper.service.ts    # 다음 뉴스 스크래핑
-│   │   │   ├── daum-news-schedule.service.ts   # 1시간 자동 스케줄러
-│   │   │   └── gemini.service.ts               # AI 스크립트 생성
+│   │   │   ├── daum-news-scraper.service.ts                # 다음 뉴스 스크래핑
+│   │   │   ├── hourly-browser-upload-schedule.service.ts  # 2시간 자동 스케줄러
+│   │   │   └── gemini.service.ts                          # AI 스크립트 생성
 │   │   ├── news.controller.ts     # REST API 컨트롤러
 │   │   └── news.module.ts         # 뉴스 모듈 설정
 │   ├── media/                     # 미디어 모듈
@@ -191,10 +195,12 @@ news-printer/
 │   │   │   ├── shorts-pipeline.service.ts            # 숏츠 전용 파이프라인
 │   │   │   ├── image-search.service.ts               # 이미지 다운로드 및 처리
 │   │   │   ├── thumbnail.service.ts                  # 썸네일 생성
-│   │   │   ├── seo-optimizer.service.ts              # SEO 최적화
-│   │   │   ├── youtube.service.ts                    # YouTube 업로드
-│   │   │   ├── published-news-tracking.service.ts    # 중복 방지
-│   │   │   └── media-pipeline.service.ts             # 롱폼 파이프라인
+│   │   │   ├── seo-optimizer.service.ts                  # SEO 최적화
+│   │   │   ├── youtube.service.ts                        # YouTube API 업로드
+│   │   │   ├── youtube-browser-upload.service.ts         # 브라우저 자동화 업로드
+│   │   │   ├── telegram-notification.service.ts          # 텔레그램 알림
+│   │   │   ├── published-news-tracking.service.ts        # 영상 타입별 중복 방지
+│   │   │   └── media-pipeline.service.ts                 # 롱폼 파이프라인
 │   │   └── media.module.ts
 │   ├── app.module.ts              # 루트 모듈
 │   └── main.ts                    # 진입점
@@ -208,27 +214,31 @@ news-printer/
 ## 🔄 워크플로우
 
 ```
-1. 매시간 정각 자동 실행 (@Cron)
+1. 2시간마다 정각 자동 실행 (@Cron('0 */2 * * *'))
    ↓
-2. 다음 뉴스 스크래핑 (대통령실/국회)
+2. 다음 뉴스 스크래핑 (국회)
    ↓
 3. 기사 본문 및 이미지 추출
    ↓
 4. 워터마크 자동 크롭 (언론사별)
    ↓
-5. Gemini AI 스크립트 생성 (앵커/리포터)
+5. 중복 체크 (URL + 영상 타입별)
    ↓
-6. Google TTS 음성 파일 생성
+6. Gemini AI 스크립트 생성 (앵커/리포터)
    ↓
-7. 롱폼 영상 생성 (썸네일 배경 + 엔딩 화면)
+7. Google TTS 음성 파일 생성
    ↓
-8. 숏츠 영상 생성 (Reporter 스크립트 재사용)
+8. 롱폼 영상 생성 (썸네일 배경 + 엔딩 화면)
    ↓
-9. YouTube 업로드 (SEO 최적화)
+9. 숏츠 영상 생성 (Reporter 스크립트 재사용)
    ↓
-10. SQLite 업로드 기록 저장 (중복 방지)
+10. YouTube 업로드 (API 우선, 실패 시 브라우저 자동화)
    ↓
-11. 임시 파일 자동 정리
+11. SQLite 업로드 기록 저장 (영상 타입별)
+   ↓
+12. 텔레그램 알림 전송
+   ↓
+13. 임시 파일 자동 정리
 ```
 
 ## 🛠️ 주요 기술 상세
@@ -267,8 +277,9 @@ news-printer/
 - 유튜브 카테고리 25 (정치) 자동 설정
 
 ### 중복 방지 시스템
-- SQLite 기반 업로드 기록 저장
-- 뉴스 URL 기반 중복 체크
+- SQLite 기반 영상 타입별 업로드 기록 저장
+- 뉴스 URL + 영상 타입(롱폼/숏폼) 기반 스마트 중복 체크
+- 동일 뉴스의 롱폼/숏폼 각각 별도 추적
 - 업로드 성공 시에만 기록 저장
 
 ## 🧪 테스트
@@ -286,13 +297,15 @@ npm run test:cov
 
 ## 📊 스케줄러 동작
 
-### DaumNewsScheduleService
-- **실행 주기**: `@Cron(CronExpression.EVERY_HOUR)` - 매 시간 정각
+### HourlyBrowserUploadScheduleService
+- **실행 주기**: `@Cron('0 */2 * * *')` - 2시간마다 정각
 - **처리 프로세스**:
-  1. 대통령실/국회 뉴스 크롤링 (각 카테고리별 5개)
-  2. 중복 제거 (이미 업로드된 기사 필터링)
-  3. 각 기사별 롱폼 + 숏츠 영상 생성 및 업로드
-  4. 임시 이미지 자동 정리
+  1. 국회 뉴스 크롤링 (5개)
+  2. 중복 제거 (URL + 영상 타입별 이미 업로드된 기사 필터링)
+  3. 각 기사별 롱폼 + 숏츠 영상 생성 및 브라우저 업로드
+  4. 텔레그램 업로드 성공 알림
+  5. 임시 이미지 자동 정리
+- **중복 실행 방지**: `isProcessing` 플래그로 동시 실행 차단
 
 ## 📝 라이선스
 
