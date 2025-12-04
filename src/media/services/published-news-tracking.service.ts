@@ -92,13 +92,23 @@ export class PublishedNewsTrackingService {
   /**
    * Check if a news article has already been published
    * @param url - News article URL
+   * @param videoType - 'longform' or 'shortform' (optional, checks specific type)
    * @param title - News title (optional, for duplicate title check)
-   * @returns true if already published (by URL or similar title)
+   * @returns true if already published (by URL and videoType, or similar title)
    */
-  isAlreadyPublished(url: string, title?: string): boolean {
-    // URL 체크
-    if (this.publishedNews.has(url)) {
-      return true;
+  isAlreadyPublished(url: string, videoType?: 'longform' | 'shortform', title?: string): boolean {
+    // 특정 videoType이 지정된 경우: 해당 타입만 체크
+    if (videoType) {
+      const record = this.publishedNews.get(url);
+      if (record) {
+        // 해당 타입의 영상이 이미 업로드되었는지 확인
+        return videoType === 'longform' ? !!record.longform : !!record.shortform;
+      }
+    } else {
+      // videoType이 없으면 기존 동작: URL 존재만 체크
+      if (this.publishedNews.has(url)) {
+        return true;
+      }
     }
 
     // 제목 체크 (제목이 제공된 경우)

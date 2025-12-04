@@ -115,7 +115,7 @@ export class TelegramNotificationService {
     let message = `${emoji} *YouTube 업로드 성공*\n\n`;
     message += `${methodEmoji} *방식:* ${method}\n`;
     message += `📝 *제목:* ${this.escapeMarkdown(options.title)}\n`;
-    message += `🔗 *링크:* ${options.videoUrl}\n`;
+    message += `🔗 *링크:* ${this.escapeMarkdown(options.videoUrl)}\n`;
 
     if (options.videoType) {
       const typeText = options.videoType === 'shortform' ? 'Shorts' : 'Long-form';

@@ -42,12 +42,12 @@ export class HourlyBrowserUploadScheduleService {
    */
   onModuleInit() {
     this.logger.log('HourlyBrowserUploadScheduleService initialized');
-    this.logger.log('Schedule: Every hour at :00 (Scrape + Upload both longform & shortform)');
+    this.logger.log('Schedule: Every 2 hours at :00 (Scrape + Upload both longform & shortform)');
   }
 
   /**
-   * 1시간마다 실행되는 크론 작업
-   * 매 시간 정각에 실행 (예: 1:00, 2:00, 3:00...)
+   * 2시간마다 실행되는 크론 작업
+   * 2시간마다 정각에 실행 (예: 0:00, 2:00, 4:00, 6:00...)
    *
    * 처리 순서:
    * 1. Daum 뉴스 스크래핑 (국회)
@@ -55,7 +55,7 @@ export class HourlyBrowserUploadScheduleService {
    * 3. 각 기사별 롱폼 + 숏폼 영상 생성 및 브라우저 업로드
    * 4. 업로드 완료 후 추적 기록
    */
-  @Cron(CronExpression.EVERY_HOUR)
+  @Cron('0 */2 * * *')
   async handleHourlyUpload() {
     // 중복 실행 방지
     if (this.isProcessing) {

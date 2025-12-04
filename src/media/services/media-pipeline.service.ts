@@ -92,9 +92,9 @@ export class MediaPipelineService {
       // Step 0: Check if already published (duplicate prevention)
       // Skip duplicate check if in review mode (skipUpload)
       if (options.newsUrl && !options.skipUpload) {
-        if (this.publishedNewsTrackingService.isAlreadyPublished(options.newsUrl)) {
+        if (this.publishedNewsTrackingService.isAlreadyPublished(options.newsUrl, 'longform')) {
           const existingRecord = this.publishedNewsTrackingService.getPublishedRecord(options.newsUrl);
-          this.logger.warn(`News already published: ${options.title}`);
+          this.logger.warn(`Longform news already published: ${options.title}`);
 
           // 롱폼 업로드 정보 표시
           if (existingRecord?.longform) {
